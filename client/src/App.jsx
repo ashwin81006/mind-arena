@@ -26,6 +26,13 @@ export default function App() {
   const wsRef = useRef(null);
   const logsEndRef = useRef(null);
 
+  // Synchronization Refs to prevent React stale closures in WebSocket callbacks
+  const myPlayerIdRef = useRef(null);
+  const myPlayerNameRef = useRef('');
+  const isHostRef = useRef(false);
+  const isReadyRef = useRef(false);
+  const messageHandlerRef = useRef(null);
+
   const addLog = (text) => {
     const time = new Date().toLocaleTimeString('en-US', { hour12: false });
     setLogs((prev) => [...prev.slice(-40), { id: Date.now() + Math.random(), time, text }]);
@@ -75,6 +82,7 @@ export default function App() {
 
     setConnecting(true);
     addLog(`Connecting to bridge and arena at ${host}:${port}...`);
+    myPlayerNameRef.current = name;
 
     // Connect to WebSocket Bridge on port 5051
     const wsUrl = `ws://${window.location.hostname || 'localhost'}:5051`;
@@ -87,7 +95,9 @@ export default function App() {
 
     ws.onmessage = (event) => {
       const line = event.data.trim();
-      handleServerMessage(line, name);
+      if (messageHandlerRef.current) {
+        messageHandlerRef.current(line);
+      }
     };
 
     ws.onerror = (err) => {
@@ -104,12 +114,15 @@ export default function App() {
       setMyPlayerId(null);
       setIsHost(false);
       setIsReady(false);
+      myPlayerIdRef.current = null;
+      isHostRef.current = false;
+      isReadyRef.current = false;
       setPlayers([]);
     };
   };
 
   // Parse incoming server protocol messages
-  const handleServerMessage = (rawMessage, requestedName) => {
+  const handleServerMessage = (rawMessage) => {
     const parts = rawMessage.split('|');
     const command = parts[0];
     const data = parts.slice(1).join('|');
@@ -117,13 +130,15 @@ export default function App() {
     switch (command) {
       case 'WELCOME':
         // Server asks for NAME
-        send(`NAME|${requestedName}`);
+        send(`NAME|${myPlayerNameRef.current || playerName.trim() || 'Player'}`);
         break;
 
       case 'PLAYER_INFO': {
         // PLAYER_INFO|<id>|<name>
         const [id, pName] = data.split('|');
         const numId = parseInt(id, 10);
+        myPlayerIdRef.current = numId;
+        myPlayerNameRef.current = pName;
         setMyPlayerId(numId);
         setMyPlayerName(pName);
         setConnecting(false);
@@ -140,10 +155,12 @@ export default function App() {
       case 'ROOM_CREATED': {
         const roomId = data;
         setCurrentRoomId(roomId);
+        isHostRef.current = true;
         setIsHost(true);
+        isReadyRef.current = false;
         setIsReady(false);
         setPlayers([
-          { id: myPlayerId, name: myPlayerName, ready: false, isHost: true, isMe: true }
+          { id: myPlayerIdRef.current, name: myPlayerNameRef.current, ready: false, isHost: true, isMe: true }
         ]);
         setScreen('ROOM');
         addLog(`Room ${roomId} created. You are Host.`);
@@ -153,7 +170,9 @@ export default function App() {
       case 'ROOM_JOINED': {
         const roomId = data;
         setCurrentRoomId(roomId);
+        isHostRef.current = false;
         setIsHost(false);
+        isReadyRef.current = false;
         setIsReady(false);
         setScreen('ROOM');
         addLog(`Joined Room ${roomId}. Waiting for roster sync...`);
@@ -164,8 +183,10 @@ export default function App() {
         // ROOM_STATE|id,name,ready,isHost|id,name,ready,isHost|...
         if (!data) return;
         const playerEntries = data.split('|');
-        let currentHost = false;
-        let currentReady = false;
+        const myId = myPlayerIdRef.current;
+        const myName = myPlayerNameRef.current;
+        let currentHost = isHostRef.current; // Keep existing host status unless explicitly updated
+        let currentReady = isReadyRef.current;
 
         const parsed = playerEntries
           .map((entry) => {
@@ -174,7 +195,7 @@ export default function App() {
             const id = parseInt(idStr, 10);
             const ready = readyStr === 'true';
             const hostRole = hostStr === 'true';
-            const isMe = id === myPlayerId;
+            const isMe = (myId !== null && id === myId) || (myName && name === myName);
 
             if (isMe) {
               currentHost = hostRole;
@@ -185,6 +206,8 @@ export default function App() {
           })
           .filter(Boolean);
 
+        isHostRef.current = currentHost;
+        isReadyRef.current = currentReady;
         setIsHost(currentHost);
         setIsReady(currentReady);
         setPlayers(parsed);
@@ -209,8 +232,10 @@ export default function App() {
         // HOST_CHANGED|<newHostId>
         const newHostId = parseInt(data, 10);
         addLog(`Host changed to player #${newHostId}`);
-        if (newHostId === myPlayerId) {
-          setIsHost(true);
+        const amIHost = (newHostId === myPlayerIdRef.current);
+        isHostRef.current = amIHost;
+        setIsHost(amIHost);
+        if (amIHost) {
           addLog(`You are now the Room Host!`);
         }
         break;
@@ -219,7 +244,9 @@ export default function App() {
       case 'ROOM_LEFT':
       case 'NOT_IN_ROOM':
         setCurrentRoomId(null);
+        isHostRef.current = false;
         setIsHost(false);
+        isReadyRef.current = false;
         setIsReady(false);
         setPlayers([]);
         setScreen('LOBBY');
@@ -242,6 +269,9 @@ export default function App() {
         break;
     }
   };
+
+  // Keep ref pointing to the latest version of handleServerMessage
+  messageHandlerRef.current = handleServerMessage;
 
   const handleDisconnect = () => {
     send('DISCONNECT');
@@ -507,13 +537,21 @@ export default function App() {
                   {isReady ? '✕ Cancel Ready' : '✓ Ready Up'}
                 </button>
 
-                {isHost && (
+                {isHost ? (
                   <button
                     className="btn btn-lg btn-primary"
                     disabled={!canStartMatch}
                     onClick={handleStartMatch}
                   >
                     ⚡ Start Match
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn-lg btn-secondary"
+                    disabled
+                    style={{ opacity: 0.6, cursor: 'not-allowed' }}
+                  >
+                    Waiting for Host...
                   </button>
                 )}
               </div>
