@@ -12,9 +12,31 @@ function tcpBridgePlugin() {
       const BRIDGE_PORT = 5051;
       const TCP_PORT = 5050;
 
-      wss = new WebSocketServer({ port: BRIDGE_PORT });
-      console.log(`\n[Bridge] WebSocket-to-TCP bridge active on ws://localhost:${BRIDGE_PORT}`);
-      console.log(`[Bridge] Connecting to Mind Arena TCP server on localhost:${TCP_PORT}\n`);
+      try {
+        wss = new WebSocketServer({ port: BRIDGE_PORT, host: '0.0.0.0' });
+        wss.on('error', (err) => {
+          if (err.code === 'EADDRINUSE') {
+            console.log(`\n[Bridge] Port ${BRIDGE_PORT} already in use. Reusing existing bridge.\n`);
+          } else {
+            console.error('[Bridge] WebSocketServer error:', err);
+          }
+        });
+        console.log(`\n[Bridge] WebSocket-to-TCP bridge active on ws://0.0.0.0:${BRIDGE_PORT}`);
+        console.log(`[Bridge] Connecting to Mind Arena TCP server on localhost:${TCP_PORT}\n`);
+      } catch (err) {
+        if (err.code === 'EADDRINUSE') {
+          console.log(`\n[Bridge] Port ${BRIDGE_PORT} already in use. Reusing existing bridge.\n`);
+          return;
+        }
+        throw err;
+      }
+
+      server.httpServer?.on('close', () => {
+        if (wss) {
+          try { wss.close(); } catch (e) {}
+          wss = null;
+        }
+      });
 
       wss.on('connection', (ws) => {
         console.log('[Bridge] Web client connected via WebSocket');
@@ -72,6 +94,7 @@ function tcpBridgePlugin() {
 export default defineConfig({
   plugins: [react(), tcpBridgePlugin()],
   server: {
+    host: '0.0.0.0',
     port: 5173,
     open: false
   }

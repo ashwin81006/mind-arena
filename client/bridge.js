@@ -7,11 +7,11 @@ const WS_PORT = 5051;
 const TCP_PORT = 5050;
 const TCP_HOST = 'localhost';
 
-const wss = new WebSocketServer({ port: WS_PORT });
+const wss = new WebSocketServer({ port: WS_PORT, host: '0.0.0.0' });
 
 console.log(`===============================================`);
 console.log(`  MIND ARENA - WebSocket <-> TCP Bridge`);
-console.log(`  Listening on WebSocket: ws://localhost:${WS_PORT}`);
+console.log(`  Listening on WebSocket: ws://0.0.0.0:${WS_PORT}`);
 console.log(`  Forwarding to TCP Server: ${TCP_HOST}:${TCP_PORT}`);
 console.log(`===============================================\n`);
 

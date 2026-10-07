@@ -29,4 +29,15 @@ public class Protocol {
 
     public static final String MATCH_STARTED = "MATCH_STARTED";
     public static final String ROOM_STATE = "ROOM_STATE";
+
+    // Gameplay & Match Lifecycle
+    public static final String GAME_START = "GAME_START";
+    public static final String ROUND_PREPARE = "ROUND_PREPARE";
+    public static final String ROUND_TRIGGER = "ROUND_TRIGGER";
+    public static final String SUBMIT_SCORE = "SUBMIT_SCORE";
+    public static final String PLAYER_SCORED = "PLAYER_SCORED";
+    public static final String ROUND_RESULTS = "ROUND_RESULTS";
+    public static final String MATCH_OVER = "MATCH_OVER";
+    public static final String RETURN_TO_LOBBY = "RETURN_TO_LOBBY";
+    public static final String LOBBY_RETURNED = "LOBBY_RETURNED";
 }

@@ -109,12 +109,32 @@ public class ClientHandler implements Runnable {
                 if (room != null) {
 
                     String roomId = room.getId();
+                    int oldHostId = room.getHostId();
 
                     room.removePlayer(
                             player.getId());
 
-                    if (room.getPlayerCount() == 0) {
+                    if (room.getPlayerCount() > 0) {
+                        room.broadcast(
+                                Protocol.PLAYER_LEFT +
+                                        "|" +
+                                        player.getId() +
+                                        "|" +
+                                        player.getName());
 
+                        if (oldHostId == player.getId()) {
+                            room.broadcast(
+                                    Protocol.HOST_CHANGED +
+                                            "|" +
+                                            room.getHostId());
+                        }
+                        room.broadcastState();
+                    }
+
+                    if (room.getPlayerCount() == 0) {
+                        if (room.getMatchSession() != null) {
+                            room.getMatchSession().stop();
+                        }
                         roomManager.removeRoom(roomId);
                     }
                 }
@@ -206,7 +226,7 @@ public class ClientHandler implements Runnable {
 
             String[] parts = request.split("\\|", 2);
 
-            String roomId = parts[1];
+            String roomId = parts.length > 1 ? parts[1].trim().toUpperCase() : "";
 
             Room room = roomManager.getRoom(roomId);
 
@@ -285,9 +305,13 @@ public class ClientHandler implements Runnable {
                                         "|" +
                                         room.getHostId());
                     }
+
+                    room.broadcastState();
                 }
                 if (room.getPlayerCount() == 0) {
-
+                    if (room.getMatchSession() != null) {
+                        room.getMatchSession().stop();
+                    }
                     roomManager.removeRoom(roomId);
 
                     System.out.println(
@@ -340,14 +364,31 @@ public class ClientHandler implements Runnable {
                 return;
             }
 
-            room.broadcast(
-                    Protocol.MATCH_STARTED +
-                            "|" +
-                            room.getId());
+            MatchSession session = new MatchSession(room);
+            room.setMatchSession(session);
+            session.start();
 
-            System.out.println(
-                    "Match started in " +
-                            room.getId());
+        } else if (request.startsWith(Protocol.SUBMIT_SCORE + "|")) {
+
+            Room room = player.getRoom();
+
+            if (room != null && room.getMatchSession() != null) {
+                String[] parts = request.split("\\|", 2);
+                long scoreOrTime = 0;
+                try {
+                    scoreOrTime = Long.parseLong(parts[1].trim());
+                } catch (NumberFormatException ignored) {
+                }
+                room.getMatchSession().handlePlayerScore(player, scoreOrTime);
+            }
+
+        } else if (request.equals(Protocol.RETURN_TO_LOBBY)) {
+
+            Room room = player.getRoom();
+
+            if (room != null && room.isHost(player.getId()) && room.getMatchSession() != null) {
+                room.getMatchSession().returnToLobby();
+            }
         } else {
 
             out.println(

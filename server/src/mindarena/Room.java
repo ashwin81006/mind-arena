@@ -10,6 +10,7 @@ public class Room {
     private int hostId;
 
     private final ConcurrentHashMap<Integer, Player> players = new ConcurrentHashMap<>();
+    private MatchSession matchSession;
 
     public Room(String id, Player host) {
 
@@ -115,15 +116,13 @@ public class Room {
     }
 
     public void removePlayer(int playerId) {
-
         players.remove(playerId);
 
-        if (playerId == hostId && !players.isEmpty()) {
-
-            hostId = players.values()
-                    .iterator()
-                    .next()
-                    .getId();
+        if (playerId == hostId) {
+            java.util.Iterator<Player> it = players.values().iterator();
+            if (it.hasNext()) {
+                hostId = it.next().getId();
+            }
         }
     }
 
@@ -156,5 +155,17 @@ public class Room {
         }
 
         return true;
+    }
+
+    public java.util.Collection<Player> getPlayers() {
+        return players.values();
+    }
+
+    public MatchSession getMatchSession() {
+        return matchSession;
+    }
+
+    public void setMatchSession(MatchSession matchSession) {
+        this.matchSession = matchSession;
     }
 }
