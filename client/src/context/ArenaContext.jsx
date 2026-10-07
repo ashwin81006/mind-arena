@@ -349,7 +349,18 @@ export function ArenaProvider({ children }) {
 
     disconnectSocket();
 
-    const wsUrl = `ws://${window.location.hostname || 'localhost'}:5051`;
+    const envWs = import.meta.env.VITE_WS_URL;
+    let wsUrl;
+    if (envWs) {
+      wsUrl = envWs;
+    } else if (window.location.port === '5173') {
+      // Local development via Vite
+      wsUrl = `ws://${window.location.hostname || 'localhost'}:5051`;
+    } else {
+      // Production deployment: match host and secure wss/ws protocol
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      wsUrl = `${protocol}//${window.location.host || 'localhost:5051'}`;
+    }
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 

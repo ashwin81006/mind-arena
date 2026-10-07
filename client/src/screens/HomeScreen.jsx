@@ -4,6 +4,7 @@ import { useToast } from '../context/ToastContext';
 import NameSetupCard from '../components/home/NameSetupCard';
 import HomeActionCards from '../components/home/HomeActionCards';
 import GamesShowcase from '../components/common/GamesShowcase';
+import HowToPlayModal from '../components/common/HowToPlayModal';
 
 export default function HomeScreen() {
   const { playerName, connecting, pendingAction, createRoom, joinRoom } = useArena();
@@ -11,6 +12,7 @@ export default function HomeScreen() {
 
   const [joinCode, setJoinCode] = useState('');
   const [nameError, setNameError] = useState(false);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
   const nameInputRef = useRef(null);
 
   const validateName = () => {
@@ -70,7 +72,22 @@ export default function HomeScreen() {
         pendingAction={pendingAction}
       />
 
+      <div className="home-help-row">
+        <button
+          type="button"
+          className="btn-help-link"
+          onClick={() => setShowHowToPlay(true)}
+        >
+          📖 New to Mind Arena? <u>Read How to Play & Game Rules</u>
+        </button>
+      </div>
+
       <GamesShowcase />
+
+      <HowToPlayModal
+        isOpen={showHowToPlay}
+        onClose={() => setShowHowToPlay(false)}
+      />
     </div>
   );
 }

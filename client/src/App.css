@@ -482,6 +482,200 @@ body {
   margin-top: 0.5rem;
 }
 
+/* ======================================================== */
+/* HOW TO PLAY MODAL & RULES GUIDE                          */
+/* ======================================================== */
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.how-to-play-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 6px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.how-to-play-nav-btn:hover {
+  background-color: #27354a;
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-help-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.btn-help-link:hover {
+  color: #818cf8;
+  background-color: rgba(99, 102, 241, 0.08);
+}
+
+.home-help-row {
+  margin-top: -0.5rem;
+  text-align: center;
+}
+
+.how-to-play-card {
+  max-width: 580px;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1.75rem;
+}
+
+.title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.how-icon {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.btn-icon-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.15rem;
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease;
+}
+
+.btn-icon-close:hover {
+  color: #fff;
+}
+
+.how-to-play-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin: 0.5rem 0;
+}
+
+.guide-section {
+  display: flex;
+  gap: 0.85rem;
+  background-color: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  align-items: flex-start;
+}
+
+.guide-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.guide-badge.highlight {
+  background-color: rgba(99, 102, 241, 0.18);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #818cf8;
+}
+
+.guide-badge.tips {
+  background-color: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+}
+
+.guide-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.guide-text h4 {
+  font-family: var(--font-heading);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.guide-text p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.guide-subtext {
+  margin-top: 0.25rem;
+  font-size: 0.8rem !important;
+  color: var(--text-dim) !important;
+}
+
+.rules-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin-top: 0.35rem;
+}
+
+.rules-list li {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  align-items: flex-start;
+}
+
+.rules-list kbd {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: #fff;
+}
+
+.rule-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-top: 0.35rem;
+  flex-shrink: 0;
+}
+
+.rule-dot.red { background-color: var(--danger); }
+.rule-dot.yellow { background-color: var(--warning); }
+.rule-dot.green { background-color: var(--success); }
+.rule-dot.purple { background-color: var(--primary); }
+
 .settings-toggle-btn {
   background: none;
   border: none;
@@ -1385,5 +1579,18 @@ body {
   .leaderboard-row.header-row {
     font-size: 0.65rem;
     padding: 0.25rem 0.4rem;
+  }
+
+  .how-to-play-card {
+    padding: 1rem 0.85rem;
+    gap: 1rem;
+  }
+
+  .how-to-play-nav-btn .how-to-play-text {
+    display: none;
+  }
+
+  .how-to-play-nav-btn {
+    padding: 0.35rem 0.55rem;
   }
 }

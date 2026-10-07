@@ -1,19 +1,73 @@
-// Mind Arena - Standalone WebSocket to TCP Bridge
-// Bridges web browser WebSockets (ws://localhost:5051) to Java TCP Server (localhost:5050)
+import http from 'http';
+import fs from 'fs';
+import path from 'path';
 import net from 'net';
+import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
 
-const WS_PORT = 5051;
-const TCP_PORT = 5050;
-const TCP_HOST = 'localhost';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const distPath = path.join(__dirname, 'dist');
 
-const wss = new WebSocketServer({ port: WS_PORT, host: '0.0.0.0' });
+const WS_PORT = parseInt(process.env.PORT || '5051', 10);
+const TCP_PORT = parseInt(process.env.TCP_PORT || '5050', 10);
+const TCP_HOST = process.env.TCP_HOST || 'localhost';
 
-console.log(`===============================================`);
-console.log(`  MIND ARENA - WebSocket <-> TCP Bridge`);
-console.log(`  Listening on WebSocket: ws://0.0.0.0:${WS_PORT}`);
-console.log(`  Forwarding to TCP Server: ${TCP_HOST}:${TCP_PORT}`);
-console.log(`===============================================\n`);
+const MIME_TYPES = {
+  '.html': 'text/html',
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2'
+};
+
+const httpServer = http.createServer((req, res) => {
+  if (!fs.existsSync(distPath)) {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Mind Arena WebSocket Bridge Active');
+    return;
+  }
+
+  let filePath = path.join(distPath, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
+  if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+    filePath = path.join(distPath, 'index.html');
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+  fs.readFile(filePath, (err, data) => {
+    if (err) {
+      res.writeHead(500);
+      res.end('Server Error');
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': contentType });
+    res.end(data);
+  });
+});
+
+const wss = new WebSocketServer({ server: httpServer });
+
+httpServer.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`[Bridge] Port ${WS_PORT} is already in use.`);
+  } else {
+    console.error('[Bridge] Server error:', err);
+  }
+});
+
+httpServer.listen(WS_PORT, '0.0.0.0', () => {
+  console.log(`===============================================`);
+  console.log(`  MIND ARENA - Web Server & WebSocket Bridge`);
+  console.log(`  Listening on: http://0.0.0.0:${WS_PORT}`);
+  console.log(`  Forwarding to TCP Server: ${TCP_HOST}:${TCP_PORT}`);
+  console.log(`===============================================\n`);
+});
 
 wss.on('connection', (ws) => {
   console.log('[Bridge] Browser client connected via WebSocket');
