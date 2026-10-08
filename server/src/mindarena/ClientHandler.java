@@ -333,7 +333,28 @@ public class ClientHandler implements Runnable {
             }
         }
 
-        else if (request.equals(Protocol.START_MATCH)) {
+        else if (request.startsWith(Protocol.SET_GAMES + "|")) {
+
+            Room room = player.getRoom();
+
+            if (room != null && room.isHost(player.getId())) {
+                String[] parts = request.split("\\|", 2);
+                if (parts.length > 1) {
+                    String[] raw = parts[1].split(",");
+                    java.util.List<String> list = new java.util.ArrayList<>();
+                    for (String g : raw) {
+                        String trimmed = g.trim();
+                        if (!trimmed.isEmpty()) {
+                            list.add(trimmed);
+                        }
+                    }
+                    if (!list.isEmpty()) {
+                        room.setSelectedGames(list);
+                    }
+                }
+            }
+
+        } else if (request.startsWith(Protocol.START_MATCH)) {
 
             Room room = player.getRoom();
 
@@ -364,7 +385,24 @@ public class ClientHandler implements Runnable {
                 return;
             }
 
-            MatchSession session = new MatchSession(room);
+            java.util.List<String> gamesToPlay = room.getSelectedGames();
+            String[] parts = request.split("\\|", 2);
+            if (parts.length > 1 && !parts[1].trim().isEmpty()) {
+                String[] raw = parts[1].split(",");
+                java.util.List<String> customList = new java.util.ArrayList<>();
+                for (String g : raw) {
+                    String trimmed = g.trim();
+                    if (!trimmed.isEmpty()) {
+                        customList.add(trimmed);
+                    }
+                }
+                if (!customList.isEmpty()) {
+                    gamesToPlay = customList;
+                    room.setSelectedGames(customList);
+                }
+            }
+
+            MatchSession session = new MatchSession(room, gamesToPlay);
             room.setMatchSession(session);
             session.start();
 

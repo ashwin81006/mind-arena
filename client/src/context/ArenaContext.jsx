@@ -26,6 +26,13 @@ export function ArenaProvider({ children }) {
 
   // Gameplay state
   const [gameState, setGameState] = useState(null);
+  const [selectedGames, setSelectedGames] = useState([
+    'reaction-rush',
+    'sequence-memory',
+    'aim-trainer',
+    'number-recall',
+    'visual-memory'
+  ]);
 
   // Synchronization refs to avoid stale closures
   const wsRef = useRef(null);
@@ -320,6 +327,14 @@ export function ArenaProvider({ children }) {
         notify('Returned to room lobby', 'info');
         break;
 
+      case PROTOCOL.GAMES_UPDATED: {
+        const gameIds = (data || '').split(',').map((s) => s.trim()).filter(Boolean);
+        if (gameIds.length > 0) {
+          setSelectedGames(gameIds);
+        }
+        break;
+      }
+
       case PROTOCOL.ERROR:
         notify(data, 'error');
         setConnecting(false);
@@ -405,9 +420,14 @@ export function ArenaProvider({ children }) {
     send(PROTOCOL.TOGGLE_READY);
   }, [send]);
 
-  const startMatch = useCallback(() => {
-    send(PROTOCOL.START_MATCH);
+  const updateSelectedGames = useCallback((newGameIds) => {
+    setSelectedGames(newGameIds);
+    send(`${PROTOCOL.SET_GAMES}|${newGameIds.join(',')}`);
   }, [send]);
+
+  const startMatch = useCallback(() => {
+    send(`${PROTOCOL.START_MATCH}|${selectedGames.join(',')}`);
+  }, [send, selectedGames]);
 
   const leaveRoom = useCallback(() => {
     send(PROTOCOL.LEAVE_ROOM);
@@ -434,6 +454,8 @@ export function ArenaProvider({ children }) {
     connecting,
     pendingAction: pendingActionRef.current,
     gameState,
+    selectedGames,
+    updateSelectedGames,
     createRoom,
     joinRoom,
     toggleReady,

@@ -40,4 +40,6 @@ public class Protocol {
     public static final String MATCH_OVER = "MATCH_OVER";
     public static final String RETURN_TO_LOBBY = "RETURN_TO_LOBBY";
     public static final String LOBBY_RETURNED = "LOBBY_RETURNED";
+    public static final String SET_GAMES = "SET_GAMES";
+    public static final String GAMES_UPDATED = "GAMES_UPDATED";
 }

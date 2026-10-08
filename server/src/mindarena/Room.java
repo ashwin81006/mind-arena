@@ -10,6 +10,9 @@ public class Room {
     private int hostId;
 
     private final ConcurrentHashMap<Integer, Player> players = new ConcurrentHashMap<>();
+    private final java.util.List<String> selectedGames = new java.util.concurrent.CopyOnWriteArrayList<>(
+            java.util.Arrays.asList("reaction-rush", "sequence-memory", "aim-trainer", "number-recall", "visual-memory")
+    );
     private MatchSession matchSession;
 
     public Room(String id, Player host) {
@@ -34,11 +37,27 @@ public class Room {
         this.hostId = hostId;
     }
 
+    public java.util.List<String> getSelectedGames() {
+        return new java.util.ArrayList<>(selectedGames);
+    }
+
+    public void setSelectedGames(java.util.List<String> games) {
+        selectedGames.clear();
+        selectedGames.addAll(games);
+        broadcast(Protocol.GAMES_UPDATED + "|" + String.join(",", selectedGames));
+    }
+
     public void addPlayer(Player player) {
 
         players.put(
                 player.getId(),
                 player);
+
+        try {
+            PrintWriter out = new PrintWriter(player.getSocket().getOutputStream(), true);
+            out.println(Protocol.GAMES_UPDATED + "|" + String.join(",", selectedGames));
+        } catch (IOException ignored) {
+        }
     }
 
     public boolean isHost(int playerId) {
