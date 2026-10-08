@@ -28,7 +28,6 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
   const submitScore = arenaContext?.submitScore;
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
-  const leaveRoom = arenaContext?.leaveRoom;
 
   // Phase: 'MEMORIZING' | 'INPUT' | 'FEEDBACK_SUCCESS' | 'GAME_OVER'
   const [phase, setPhase] = useState('MEMORIZING');
@@ -140,7 +139,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
 
   useEffect(() => {
     startGame();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameState?.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
@@ -223,7 +222,6 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
           ) : (
             <div className="waiting-host-text">Waiting for host to return to lobby...</div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>Exit Match</button>
         </div>
       </div>
     );
@@ -234,8 +232,11 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     return (
       <div className="match-results-card">
         <div className="results-header">
-          <h2>Round {gameState.roundNumber} Results</h2>
-          <p>Number Recall Standings</p>
+          <span className="game-badge" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>
+            Game {gameState.gameIndex || 4} of {gameState.totalGames || 5}
+          </span>
+          <h2>🔢 Number Recall Results</h2>
+          <p>Tournament Standings after Number Recall</p>
         </div>
         <div className="leaderboard-table">
           <div className="leaderboard-row header-row">
@@ -303,18 +304,33 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
           </div>
         </div>
 
+        {!isPractice && (
+          <div className="round-finished-banner">
+            <span className="pulsing-dot"></span>
+            <span>Score submitted! Waiting for other players to finish...</span>
+          </div>
+        )}
+
+        {!isPractice && gameState?.scoredPlayers && gameState.scoredPlayers.length > 0 && (
+          <div className="arena-live-roster" style={{ justifyContent: 'center', marginTop: '0.5rem' }}>
+            <span>Finished: </span>
+            {gameState.scoredPlayers.map((p) => (
+              <span key={p.id} className="scored-chip">
+                ✓ {p.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="match-over-actions">
-          <button className="btn btn-primary btn-lg" onClick={startGame}>
-            🔄 Try Again
-          </button>
+          {isPractice && (
+            <button className="btn btn-primary btn-lg" onClick={startGame}>
+              🔄 Practice Again
+            </button>
+          )}
           {onBackToHome && (
             <button className="btn btn-secondary btn-sm" onClick={onBackToHome}>
               ← Back to Menu
-            </button>
-          )}
-          {leaveRoom && !isPractice && (
-            <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>
-              Exit Match
             </button>
           )}
         </div>

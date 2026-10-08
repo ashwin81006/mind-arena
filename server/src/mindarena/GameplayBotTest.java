@@ -68,15 +68,23 @@ public class GameplayBotTest {
             }
             pass("All players received MATCH_STARTED");
 
-            System.out.println("\n[6] Awaiting Game Start (Reaction Rush)...");
-            String gameStart = ashwin.waitFor(Protocol.GAME_START, 6000);
+            System.out.println("\n[6] Awaiting Game Preview Intermission (Rules & How to Play)...");
+            String gamePreview = ashwin.waitFor(Protocol.GAME_PREVIEW, 5000);
+            if (gamePreview == null) {
+                fail("GAME_PREVIEW not received");
+                return;
+            }
+            pass("Received Game Preview: " + gamePreview);
+
+            System.out.println("\n[7] Awaiting Game Start after Preview...");
+            String gameStart = ashwin.waitFor(Protocol.GAME_START, 10000);
             if (gameStart == null) {
                 fail("GAME_START not received");
                 return;
             }
             pass("Received: " + gameStart);
 
-            System.out.println("\n[7] Awaiting Round 1 Preparation (Wait for green)...");
+            System.out.println("\n[8] Awaiting Round 1 Preparation (Wait for green)...");
             String prepare = ashwin.waitFor(Protocol.ROUND_PREPARE, 6000);
             if (prepare == null) {
                 fail("ROUND_PREPARE not received");

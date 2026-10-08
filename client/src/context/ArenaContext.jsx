@@ -222,18 +222,37 @@ export function ArenaProvider({ children }) {
         notify('Match started! Get ready...', 'success');
         break;
 
-      case PROTOCOL.GAME_START: {
-        // GAME_START|reaction-rush|Reaction Rush|currentRound|totalRounds
-        const [, gameId, gameName, currentRound, totalRounds] = parts;
+      case PROTOCOL.GAME_PREVIEW: {
+        // GAME_PREVIEW|gameId|gameName|gameIndex|totalGames|durationSeconds
+        const [, gameId, gameName, gameIndex, totalGames, durationSeconds] = parts;
         setScreen('MATCH');
         setGameState({
-          gameId,
+          gameId: (gameId || '').toLowerCase().trim(),
           gameName,
-          currentRound: parseInt(currentRound, 10),
-          totalRounds: parseInt(totalRounds, 10),
-          phase: 'STARTING',
+          gameIndex: parseInt(gameIndex, 10) || 1,
+          totalGames: parseInt(totalGames, 10) || 5,
+          durationSeconds: parseInt(durationSeconds, 10) || 7,
+          phase: 'GAME_PREVIEW',
           scoredPlayers: []
         });
+        break;
+      }
+
+      case PROTOCOL.GAME_START: {
+        // GAME_START|reaction-rush|Reaction Rush|currentRound|totalRounds|gameIndex|totalGames
+        const [, gameId, gameName, currentRound, totalRounds, gameIndex, totalGames] = parts;
+        setScreen('MATCH');
+        setGameState((prev) => ({
+          ...prev,
+          gameId: (gameId || '').toLowerCase().trim(),
+          gameName: gameName || prev?.gameName || 'Game',
+          currentRound: parseInt(currentRound, 10),
+          totalRounds: parseInt(totalRounds, 10),
+          gameIndex: gameIndex ? parseInt(gameIndex, 10) : (prev?.gameIndex || 1),
+          totalGames: totalGames ? parseInt(totalGames, 10) : (prev?.totalGames || 5),
+          phase: 'STARTING',
+          scoredPlayers: []
+        }));
         break;
       }
 

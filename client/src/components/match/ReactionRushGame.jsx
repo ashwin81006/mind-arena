@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useArena } from '../../context/ArenaContext';
 
 export default function ReactionRushGame() {
-  const { gameState, myPlayerId, submitScore, isHost, returnToLobby, leaveRoom } = useArena();
+  const { gameState, myPlayerId, submitScore, isHost, returnToLobby } = useArena();
   const [clickedThisRound, setClickedThisRound] = useState(false);
   const [myReactionTime, setMyReactionTime] = useState(null);
   const [falseStart, setFalseStart] = useState(false);
@@ -117,9 +117,6 @@ export default function ReactionRushGame() {
               Waiting for host to return to lobby...
             </div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>
-            Exit Match
-          </button>
         </div>
       </div>
     );
@@ -132,8 +129,15 @@ export default function ReactionRushGame() {
     return (
       <div className="match-results-card">
         <div className="results-header">
-          <h2>Round {gameState.roundNumber} Results</h2>
-          <p>Reaction Rush Standings</p>
+          <span className="game-badge" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>
+            Game {gameState.gameIndex || 1} of {gameState.totalGames || 5}
+          </span>
+          <h2>
+            {gameState.totalRounds > 1
+              ? `⚡ Reaction Rush — Round ${gameState.roundNumber} of ${gameState.totalRounds}`
+              : `⚡ Reaction Rush Results`}
+          </h2>
+          <p>Tournament Standings after Reaction Rush</p>
         </div>
 
         <div className="leaderboard-table">

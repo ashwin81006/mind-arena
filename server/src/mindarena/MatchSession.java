@@ -44,8 +44,8 @@ public class MatchSession {
         System.out.println("[Match] Starting match in " + room.getId() + " with games: " + String.join(", ", gameSequence));
         room.broadcast(Protocol.MATCH_STARTED + "|" + room.getId());
 
-        // Wait 2 seconds before launching first game
-        scheduler.schedule(this::startNextGame, 2, TimeUnit.SECONDS);
+        // Wait 1.5 seconds then show first game preview
+        scheduler.schedule(this::startNextGame, 1500, TimeUnit.MILLISECONDS);
     }
 
     private String getCurrentGameId() {
@@ -90,11 +90,17 @@ public class MatchSession {
         }
 
         String gameId = getCurrentGameId();
+        String gameName = getGameName(gameId);
         currentRound = 0;
         totalRoundsForCurrentGame = getRoundsCountForGame(gameId);
 
-        System.out.println("[Match " + room.getId() + "] Starting Game (" + (currentGameIndex + 1) + "/" + gameSequence.size() + "): " + getGameName(gameId));
-        startNextRound();
+        System.out.println("[Match " + room.getId() + "] Game Preview (" + (currentGameIndex + 1) + "/" + gameSequence.size() + "): " + gameName);
+
+        // Gap between games: display preview with how-to-play & rules for 7 seconds
+        int previewDurationSeconds = 7;
+        room.broadcast(Protocol.GAME_PREVIEW + "|" + gameId + "|" + gameName + "|" + (currentGameIndex + 1) + "|" + gameSequence.size() + "|" + previewDurationSeconds);
+
+        scheduler.schedule(this::startNextRound, previewDurationSeconds, TimeUnit.SECONDS);
     }
 
     private void startNextRound() {
@@ -120,8 +126,8 @@ public class MatchSession {
 
         System.out.println("[Match " + room.getId() + "] Starting Round " + currentRound + "/" + totalRoundsForCurrentGame + " for " + gameName);
 
-        // Notify clients about active game and round
-        room.broadcast(Protocol.GAME_START + "|" + gameId + "|" + gameName + "|" + currentRound + "|" + totalRoundsForCurrentGame);
+        // Notify clients about active game and round with tournament game index
+        room.broadcast(Protocol.GAME_START + "|" + gameId + "|" + gameName + "|" + currentRound + "|" + totalRoundsForCurrentGame + "|" + (currentGameIndex + 1) + "|" + gameSequence.size());
 
         if ("reaction-rush".equalsIgnoreCase(gameId)) {
             // Reaction Rush has countdown then wait for green
@@ -293,6 +299,24 @@ public class MatchSession {
         room.setMatchSession(null);
         room.broadcast(Protocol.LOBBY_RETURNED);
         room.broadcastState();
+    }
+
+    public synchronized void onPlayerLeft(int playerId) {
+        roundScores.remove(playerId);
+        totalScores.remove(playerId);
+
+        if (room.getPlayerCount() == 0) {
+            stop();
+            return;
+        }
+
+        // If round is active and all remaining players have submitted, end round immediately
+        if (roundActive && roundScores.size() >= room.getPlayerCount()) {
+            if (timeoutFuture != null && !timeoutFuture.isDone()) {
+                timeoutFuture.cancel(false);
+            }
+            scheduler.schedule(this::endRound, 300, TimeUnit.MILLISECONDS);
+        }
     }
 
     public void stop() {

@@ -36,7 +36,6 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
   const submitScore = arenaContext?.submitScore;
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
-  const leaveRoom = arenaContext?.leaveRoom;
 
   // Phase: 'SHOWING' | 'SELECTING' | 'VALIDATING' | 'GAME_OVER'
   const [phase, setPhase] = useState('SHOWING');
@@ -113,7 +112,7 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
 
   useEffect(() => {
     startGame();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameState?.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Player clicks/deselects a tile during SELECTING phase
   const handleTileClick = (index) => {
@@ -238,7 +237,6 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
           ) : (
             <div className="waiting-host-text">Waiting for host to return to lobby...</div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>Exit Match</button>
         </div>
       </div>
     );
@@ -249,8 +247,11 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     return (
       <div className="match-results-card">
         <div className="results-header">
-          <h2>Round {gameState.roundNumber} Results</h2>
-          <p>Visual Memory Standings</p>
+          <span className="game-badge" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>
+            Game {gameState.gameIndex || 5} of {gameState.totalGames || 5}
+          </span>
+          <h2>👁️ Visual Memory Results</h2>
+          <p>Tournament Standings after Visual Memory</p>
         </div>
         <div className="leaderboard-table">
           <div className="leaderboard-row header-row">
@@ -279,7 +280,7 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     );
   }
 
-  // GAME OVER SCREEN
+  // GAME OVER / ROUND FINISHED SCREEN
   if (phase === 'GAME_OVER') {
     const highestLevel = Math.max(0, level - 1);
 
@@ -287,8 +288,8 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
       <div className="match-results-card visual-game-over-card">
         <div className="results-header">
           <span className="game-over-icon">👁️</span>
-          <h2 style={{ color: '#ef4444' }}>Game Over</h2>
-          <p>You missed or incorrectly selected tiles.</p>
+          <h2 style={{ color: '#ef4444' }}>Round Finished</h2>
+          <p>Strikes exhausted for this round.</p>
         </div>
 
         <div className="stats-summary-grid">
@@ -306,18 +307,33 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
           </div>
         </div>
 
+        {!isPractice && (
+          <div className="round-finished-banner">
+            <span className="pulsing-dot"></span>
+            <span>Score submitted! Waiting for other players to finish...</span>
+          </div>
+        )}
+
+        {!isPractice && gameState?.scoredPlayers && gameState.scoredPlayers.length > 0 && (
+          <div className="arena-live-roster" style={{ justifyContent: 'center', marginTop: '0.5rem' }}>
+            <span>Finished: </span>
+            {gameState.scoredPlayers.map((p) => (
+              <span key={p.id} className="scored-chip">
+                ✓ {p.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="match-over-actions">
-          <button className="btn btn-primary btn-lg" onClick={startGame}>
-            🔄 Try Again
-          </button>
+          {isPractice && (
+            <button className="btn btn-primary btn-lg" onClick={startGame}>
+              🔄 Practice Again
+            </button>
+          )}
           {onBackToHome && (
             <button className="btn btn-secondary btn-sm" onClick={onBackToHome}>
               ← Back to Menu
-            </button>
-          )}
-          {leaveRoom && !isPractice && (
-            <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>
-              Exit Match
             </button>
           )}
         </div>

@@ -18,7 +18,6 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
   const submitScore = arenaContext?.submitScore;
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
-  const leaveRoom = arenaContext?.leaveRoom;
 
   // Phase: 'IDLE' | 'SHOWING' | 'INPUT' | 'LEVEL_SUCCESS' | 'GAME_OVER'
   const [phase, setPhase] = useState('IDLE');
@@ -225,7 +224,6 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
           ) : (
             <div className="waiting-host-text">Waiting for host to return to lobby...</div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>Exit Match</button>
         </div>
       </div>
     );
@@ -236,8 +234,11 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     return (
       <div className="match-results-card">
         <div className="results-header">
-          <h2>Round {gameState.roundNumber} Results</h2>
-          <p>Sequence Memory Standings</p>
+          <span className="game-badge" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>
+            Game {gameState.gameIndex || 2} of {gameState.totalGames || 5}
+          </span>
+          <h2>🧠 Sequence Memory Results</h2>
+          <p>Tournament Standings after Sequence Memory</p>
         </div>
         <div className="leaderboard-table">
           <div className="leaderboard-row header-row">
@@ -275,8 +276,8 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
       <div className="match-results-card sequence-game-over-card">
         <div className="results-header">
           <span className="game-over-icon">🧠</span>
-          <h2 style={{ color: '#ef4444' }}>Game Over</h2>
-          <p>You clicked an incorrect tile in the sequence.</p>
+          <h2 style={{ color: '#ef4444' }}>Round Finished</h2>
+          <p>You made an incorrect move in the sequence.</p>
         </div>
 
         <div className="stats-summary-grid">
@@ -294,18 +295,33 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
           </div>
         </div>
 
+        {!isPractice && (
+          <div className="round-finished-banner">
+            <span className="pulsing-dot"></span>
+            <span>Score submitted! Waiting for other players to finish...</span>
+          </div>
+        )}
+
+        {!isPractice && gameState?.scoredPlayers && gameState.scoredPlayers.length > 0 && (
+          <div className="arena-live-roster" style={{ justifyContent: 'center', marginTop: '0.5rem' }}>
+            <span>Finished: </span>
+            {gameState.scoredPlayers.map((p) => (
+              <span key={p.id} className="scored-chip">
+                ✓ {p.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="match-over-actions">
-          <button className="btn btn-primary btn-lg" onClick={startGame}>
-            🔄 Try Again
-          </button>
+          {isPractice && (
+            <button className="btn btn-primary btn-lg" onClick={startGame}>
+              🔄 Practice Again
+            </button>
+          )}
           {onBackToHome && (
             <button className="btn btn-secondary btn-sm" onClick={onBackToHome}>
               ← Back to Menu
-            </button>
-          )}
-          {leaveRoom && !isPractice && (
-            <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>
-              Exit Match
             </button>
           )}
         </div>

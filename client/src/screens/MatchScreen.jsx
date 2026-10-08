@@ -5,6 +5,7 @@ import SequenceMemoryGame from '../components/match/SequenceMemoryGame';
 import NumberRecallGame from '../components/match/NumberRecallGame';
 import VisualMemoryGame from '../components/match/VisualMemoryGame';
 import AimTrainerGame from '../components/match/AimTrainerGame';
+import GamePreviewScreen from '../components/match/GamePreviewScreen';
 
 export default function MatchScreen() {
   const { gameState, myPlayerId, isHost, returnToLobby, leaveRoom } = useArena();
@@ -66,16 +67,21 @@ export default function MatchScreen() {
               Waiting for host to return to lobby...
             </div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>
-            Exit Match
+          <button className="btn btn-outline-danger btn-sm" onClick={leaveRoom}>
+            Leave Room
           </button>
         </div>
       </div>
     );
   }
 
+  // Intermission gap & Game Preview screen (between games and before 1st game)
+  if (gameState && (gameState.phase === 'GAME_PREVIEW' || gameState.phase === 'MATCH_INTRO')) {
+    return <GamePreviewScreen />;
+  }
+
   // Active mini-game or round results
-  if (gameState && gameState.phase !== 'MATCH_INTRO') {
+  if (gameState) {
     const rawId = (gameState.gameId || '').toLowerCase().replace(/_/g, '-');
     switch (rawId) {
       case 'sequence-memory':
@@ -92,18 +98,9 @@ export default function MatchScreen() {
     }
   }
 
-  // Pre-game intro countdown
-  const currentGameName = gameState?.gameName || 'Reaction Rush';
   return (
-    <div className="match-view">
-      <div className="match-card">
-        <h2>⚡ Match Starting</h2>
-        <p>First Game: <strong>{currentGameName}</strong></p>
-        <div className="next-round-bar" style={{ marginTop: '1rem' }}>
-          <span className="pulsing-dot"></span>
-          <span>Preparing match session...</span>
-        </div>
-      </div>
+    <div className="game-loading-box">
+      <p>Connecting to match session...</p>
     </div>
   );
 }

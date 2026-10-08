@@ -33,7 +33,6 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
   const submitScore = arenaContext?.submitScore;
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
-  const leaveRoom = arenaContext?.leaveRoom;
 
   // Phase: 'PREPARE' | 'ACTIVE' | 'GAME_OVER'
   const [phase, setPhase] = useState('PREPARE');
@@ -106,7 +105,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
 
   useEffect(() => {
     startGame();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gameState?.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle successful hit on target
   const handleTargetClick = (e) => {
@@ -222,7 +221,6 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
           ) : (
             <div className="waiting-host-text">Waiting for host to return to lobby...</div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>Exit Match</button>
         </div>
       </div>
     );
@@ -233,14 +231,17 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
     return (
       <div className="match-results-card">
         <div className="results-header">
-          <h2>Round {gameState.roundNumber} Results</h2>
-          <p>Aim Trainer Standings</p>
+          <span className="game-badge" style={{ marginBottom: '0.4rem', display: 'inline-block' }}>
+            Game {gameState.gameIndex || 3} of {gameState.totalGames || 5}
+          </span>
+          <h2>🎯 Aim Trainer Results</h2>
+          <p>Tournament Standings after Aim Trainer</p>
         </div>
         <div className="leaderboard-table">
           <div className="leaderboard-row header-row">
             <span>Player</span>
-            <span style={{ textAlign: 'center' }}>Avg Reaction</span>
-            <span style={{ textAlign: 'right' }}>Score</span>
+            <span style={{ textAlign: 'center' }}>Score</span>
+            <span style={{ textAlign: 'right' }}>Points</span>
             <span style={{ textAlign: 'right' }}>Total</span>
           </div>
           {results.map((entry) => {
@@ -248,7 +249,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
             return (
               <div key={entry.id} className={`leaderboard-row ${isMe ? 'is-me-row' : ''}`}>
                 <span className="name-col">{entry.name} {isMe && <span className="badge-you">You</span>}</span>
-                <span className="time-col text-good">{entry.reaction > 0 ? `${entry.reaction} ms` : 'Missed'}</span>
+                <span className="time-col text-good">{entry.points} pts</span>
                 <span className="pts-col">+{entry.points}</span>
                 <span className="total-col">{entry.total}</span>
               </div>
@@ -295,18 +296,33 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
           </div>
         </div>
 
+        {!isPractice && (
+          <div className="round-finished-banner">
+            <span className="pulsing-dot"></span>
+            <span>Score submitted! Waiting for other players to finish...</span>
+          </div>
+        )}
+
+        {!isPractice && gameState?.scoredPlayers && gameState.scoredPlayers.length > 0 && (
+          <div className="arena-live-roster" style={{ justifyContent: 'center', marginTop: '0.5rem' }}>
+            <span>Finished: </span>
+            {gameState.scoredPlayers.map((p) => (
+              <span key={p.id} className="scored-chip">
+                ✓ {p.name}
+              </span>
+            ))}
+          </div>
+        )}
+
         <div className="match-over-actions">
-          <button className="btn btn-primary btn-lg" onClick={startGame}>
-            🔄 Play Again
-          </button>
+          {isPractice && (
+            <button className="btn btn-primary btn-lg" onClick={startGame}>
+              🔄 Practice Again
+            </button>
+          )}
           {onBackToHome && (
             <button className="btn btn-secondary btn-sm" onClick={onBackToHome}>
               ← Back to Menu
-            </button>
-          )}
-          {leaveRoom && !isPractice && (
-            <button className="btn btn-secondary btn-sm" onClick={leaveRoom}>
-              Exit Match
             </button>
           )}
         </div>

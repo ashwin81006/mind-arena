@@ -114,6 +114,10 @@ public class ClientHandler implements Runnable {
                     room.removePlayer(
                             player.getId());
 
+                    if (room.getMatchSession() != null) {
+                        room.getMatchSession().onPlayerLeft(player.getId());
+                    }
+
                     if (room.getPlayerCount() > 0) {
                         room.broadcast(
                                 Protocol.PLAYER_LEFT +
@@ -287,6 +291,10 @@ public class ClientHandler implements Runnable {
                 room.removePlayer(
                         player.getId());
 
+                if (room.getMatchSession() != null) {
+                    room.getMatchSession().onPlayerLeft(player.getId());
+                }
+
                 player.setRoom(null);
                 player.setReady(false);
                 if (room.getPlayerCount() > 0) {
@@ -373,6 +381,13 @@ public class ClientHandler implements Runnable {
                         Protocol.ERROR +
                                 "|Only host can start");
 
+                return;
+            }
+
+            if (room.getPlayerCount() < 2) {
+                out.println(
+                        Protocol.ERROR +
+                                "|At least 2 players are required to start a match");
                 return;
             }
 

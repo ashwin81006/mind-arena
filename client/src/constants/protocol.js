@@ -31,6 +31,7 @@ export const PROTOCOL = {
   ERROR: 'ERROR',
 
   // Gameplay & Match Lifecycle
+  GAME_PREVIEW: 'GAME_PREVIEW',
   GAME_START: 'GAME_START',
   ROUND_PREPARE: 'ROUND_PREPARE',
   ROUND_TRIGGER: 'ROUND_TRIGGER',

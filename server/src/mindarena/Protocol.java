@@ -31,6 +31,7 @@ public class Protocol {
     public static final String ROOM_STATE = "ROOM_STATE";
 
     // Gameplay & Match Lifecycle
+    public static final String GAME_PREVIEW = "GAME_PREVIEW";
     public static final String GAME_START = "GAME_START";
     public static final String ROUND_PREPARE = "ROUND_PREPARE";
     public static final String ROUND_TRIGGER = "ROUND_TRIGGER";
