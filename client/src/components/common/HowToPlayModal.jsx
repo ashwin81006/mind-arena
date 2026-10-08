@@ -39,7 +39,7 @@ export default function HowToPlayModal({ isOpen, onClose }) {
             </div>
           </div>
 
-          {/* Section 2: Reaction Rush Game Rules */}
+          {/* Section 2: Mini-Games Rules */}
           <div className="guide-section">
             <div className="guide-badge highlight">Game 1</div>
             <div className="guide-text">
@@ -47,29 +47,49 @@ export default function HowToPlayModal({ isOpen, onClose }) {
               <ul className="rules-list">
                 <li>
                   <span className="rule-dot red"></span>
-                  <div>
-                    <strong>🔴 Red Screen (Wait):</strong> Keep your finger or mouse poised. Do NOT click or tap yet!
-                  </div>
+                  <div><strong>🔴 Red Screen (Wait):</strong> Wait for green! Do NOT click yet.</div>
                 </li>
                 <li>
                   <span className="rule-dot yellow"></span>
-                  <div>
-                    <strong>⚠️ False Start:</strong> If you tap while the screen is red, you receive a false start penalty (<strong>0 points</strong> for that round).
-                  </div>
+                  <div><strong>⚠️ False Start:</strong> Clicking while red gives 0 points.</div>
                 </li>
                 <li>
                   <span className="rule-dot green"></span>
-                  <div>
-                    <strong>🟢 Green Screen (Click Now!):</strong> The millisecond it turns green, tap or press down immediately (or hit <kbd>Space</kbd> / <kbd>Enter</kbd>).
-                  </div>
-                </li>
-                <li>
-                  <span className="rule-dot purple"></span>
-                  <div>
-                    <strong>🏆 Scoring:</strong> Faster reaction = higher score! Up to <strong>1,000 points</strong> per round. The player with the highest total score after 3 rounds wins the match.
-                  </div>
+                  <div><strong>🟢 Green Screen (Click Now!):</strong> Click as fast as humanly possible!</div>
                 </li>
               </ul>
+            </div>
+          </div>
+
+          <div className="guide-section">
+            <div className="guide-badge highlight">Game 2</div>
+            <div className="guide-text">
+              <h4>🧠 Sequence Memory (Memory)</h4>
+              <p>Watch highlighted tiles flash one by one in the 3×3 grid. Once the sequence ends, reproduce the exact pattern in the same order. Each level adds +1 tile to the sequence!</p>
+            </div>
+          </div>
+
+          <div className="guide-section">
+            <div className="guide-badge highlight">Game 3</div>
+            <div className="guide-text">
+              <h4>🎯 Aim Trainer (Reflex & Precision)</h4>
+              <p>Targets appear across the arena. Click all 20 targets as quickly as possible. Clicks outside the target count as misses and lower your accuracy.</p>
+            </div>
+          </div>
+
+          <div className="guide-section">
+            <div className="guide-badge highlight">Game 4</div>
+            <div className="guide-text">
+              <h4>🔢 Number Recall (Working Memory)</h4>
+              <p>Memorize the disappearing number before the timer expires. Enter the exact number string (including any leading zeroes) to advance to longer digits.</p>
+            </div>
+          </div>
+
+          <div className="guide-section">
+            <div className="guide-badge highlight">Game 5</div>
+            <div className="guide-text">
+              <h4>👁️ Visual Memory (Spatial Logic)</h4>
+              <p>A pattern of tiles illuminates simultaneously. Memorize their positions (order does not matter!). When hidden, select all target tiles and hit Submit.</p>
             </div>
           </div>
 
@@ -79,11 +99,11 @@ export default function HowToPlayModal({ isOpen, onClose }) {
             <div className="guide-text">
               <h4>Pro Tips</h4>
               <p>
-                • The delay before green is completely randomized (2.0s to 4.5s) to prevent guessing.
+                • You can practice every mini-game solo right from the Home Screen.
                 <br />
-                • On mobile, rest your thumb lightly near the center for the fastest tap.
+                • In Sequence Memory, clicks are locked while the pattern plays to prevent mistakes.
                 <br />
-                • Reaction triggers on immediate touch-down rather than release.
+                • In Aim Trainer, speed and accuracy are multiplied to compute your final score.
               </p>
             </div>
           </div>

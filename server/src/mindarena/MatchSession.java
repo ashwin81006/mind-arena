@@ -7,33 +7,94 @@ import java.util.concurrent.*;
 public class MatchSession {
 
     private final Room room;
-    private final int totalRounds = 3;
+    private final List<String> gameSequence;
+    private int currentGameIndex = 0;
     private int currentRound = 0;
+    private int totalRoundsForCurrentGame = 1;
 
     private volatile boolean roundActive = false;
     private volatile boolean waitingForTrigger = false;
     private volatile long roundTriggerTime = 0;
 
     private final ConcurrentHashMap<Integer, Integer> totalScores = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<Integer, Long> roundReactionTimes = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Integer, Long> roundScores = new ConcurrentHashMap<>();
 
     private final ScheduledExecutorService scheduler = Executors.newSingleThreadScheduledExecutor();
     private ScheduledFuture<?> timeoutFuture = null;
     private final SecureRandom random = new SecureRandom();
 
     public MatchSession(Room room) {
+        this(room, Arrays.asList("reaction-rush", "sequence-memory", "aim-trainer", "number-recall", "visual-memory"));
+    }
+
+    public MatchSession(Room room, List<String> games) {
         this.room = room;
+        if (games == null || games.isEmpty()) {
+            this.gameSequence = Arrays.asList("reaction-rush", "sequence-memory", "aim-trainer", "number-recall", "visual-memory");
+        } else {
+            this.gameSequence = new ArrayList<>(games);
+        }
+
         for (Player p : room.getPlayers()) {
             totalScores.put(p.getId(), 0);
         }
     }
 
     public void start() {
-        System.out.println("[Match] Starting match in " + room.getId());
+        System.out.println("[Match] Starting match in " + room.getId() + " with games: " + String.join(", ", gameSequence));
         room.broadcast(Protocol.MATCH_STARTED + "|" + room.getId());
 
-        // Wait 2 seconds before starting round 1
-        scheduler.schedule(this::startNextRound, 2, TimeUnit.SECONDS);
+        // Wait 2 seconds before launching first game
+        scheduler.schedule(this::startNextGame, 2, TimeUnit.SECONDS);
+    }
+
+    private String getCurrentGameId() {
+        if (currentGameIndex >= 0 && currentGameIndex < gameSequence.size()) {
+            return gameSequence.get(currentGameIndex).toLowerCase().trim();
+        }
+        return "reaction-rush";
+    }
+
+    private String getGameName(String gameId) {
+        switch (gameId.toLowerCase()) {
+            case "sequence-memory":
+                return "Sequence Memory";
+            case "aim-trainer":
+                return "Aim Trainer";
+            case "number-recall":
+                return "Number Recall";
+            case "visual-memory":
+                return "Visual Memory";
+            case "reaction-rush":
+            default:
+                return "Reaction Rush";
+        }
+    }
+
+    private int getRoundsCountForGame(String gameId) {
+        if ("reaction-rush".equalsIgnoreCase(gameId)) {
+            return gameSequence.size() > 1 ? 2 : 3;
+        }
+        return 1;
+    }
+
+    private void startNextGame() {
+        if (room.getPlayerCount() == 0) {
+            stop();
+            return;
+        }
+
+        if (currentGameIndex >= gameSequence.size()) {
+            finishMatch();
+            return;
+        }
+
+        String gameId = getCurrentGameId();
+        currentRound = 0;
+        totalRoundsForCurrentGame = getRoundsCountForGame(gameId);
+
+        System.out.println("[Match " + room.getId() + "] Starting Game (" + (currentGameIndex + 1) + "/" + gameSequence.size() + "): " + getGameName(gameId));
+        startNextRound();
     }
 
     private void startNextRound() {
@@ -43,25 +104,39 @@ public class MatchSession {
         }
 
         currentRound++;
-        if (currentRound > totalRounds) {
-            finishMatch();
+        if (currentRound > totalRoundsForCurrentGame) {
+            // Move to next game in the sequence
+            currentGameIndex++;
+            startNextGame();
             return;
         }
 
-        roundReactionTimes.clear();
+        roundScores.clear();
         roundActive = false;
         waitingForTrigger = false;
 
-        System.out.println("[Match " + room.getId() + "] Starting Round " + currentRound + "/" + totalRounds);
+        String gameId = getCurrentGameId();
+        String gameName = getGameName(gameId);
 
-        // Notify clients: Game is Reaction Rush, Round X of Y
-        room.broadcast(Protocol.GAME_START + "|reaction-rush|Reaction Rush|" + currentRound + "|" + totalRounds);
+        System.out.println("[Match " + room.getId() + "] Starting Round " + currentRound + "/" + totalRoundsForCurrentGame + " for " + gameName);
 
-        // Give players 2.5 seconds countdown before waiting phase
-        scheduler.schedule(this::prepareRound, 2500, TimeUnit.MILLISECONDS);
+        // Notify clients about active game and round
+        room.broadcast(Protocol.GAME_START + "|" + gameId + "|" + gameName + "|" + currentRound + "|" + totalRoundsForCurrentGame);
+
+        if ("reaction-rush".equalsIgnoreCase(gameId)) {
+            // Reaction Rush has countdown then wait for green
+            scheduler.schedule(this::prepareReactionRushRound, 2000, TimeUnit.MILLISECONDS);
+        } else {
+            // Sequence Memory, Number Recall, Visual Memory, Aim Trainer start immediately!
+            roundActive = true;
+            roundTriggerTime = System.currentTimeMillis();
+
+            // Set generous 60-second round timeout in case player disconnects
+            timeoutFuture = scheduler.schedule(this::endRound, 60, TimeUnit.SECONDS);
+        }
     }
 
-    private void prepareRound() {
+    private void prepareReactionRushRound() {
         if (room.getPlayerCount() == 0) {
             stop();
             return;
@@ -70,16 +145,13 @@ public class MatchSession {
         waitingForTrigger = true;
         roundActive = false;
 
-        // Tell clients to wait for green (screen turns red/wait state)
         room.broadcast(Protocol.ROUND_PREPARE + "|" + currentRound + "|Wait for green...");
 
-        // Randomized delay between 2000ms and 4500ms
         int randomDelayMs = 2000 + random.nextInt(2500);
-
-        scheduler.schedule(this::triggerRound, randomDelayMs, TimeUnit.MILLISECONDS);
+        scheduler.schedule(this::triggerReactionRushRound, randomDelayMs, TimeUnit.MILLISECONDS);
     }
 
-    private void triggerRound() {
+    private void triggerReactionRushRound() {
         if (!waitingForTrigger || room.getPlayerCount() == 0) {
             return;
         }
@@ -88,54 +160,56 @@ public class MatchSession {
         roundActive = true;
         roundTriggerTime = System.currentTimeMillis();
 
-        System.out.println("[Match " + room.getId() + "] TRIGGER fired for Round " + currentRound);
-
-        // Tell clients to click NOW!
+        System.out.println("[Match " + room.getId() + "] TRIGGER fired for Reaction Rush Round " + currentRound);
         room.broadcast(Protocol.ROUND_TRIGGER + "|" + roundTriggerTime);
 
-        // Schedule timeout after 4 seconds for slow or non-responsive players
         timeoutFuture = scheduler.schedule(this::endRound, 4000, TimeUnit.MILLISECONDS);
     }
 
-    public synchronized void handlePlayerScore(Player player, long clientReportedTime) {
+    public synchronized void handlePlayerScore(Player player, long clientReportedValue) {
         if (player == null) return;
         int pId = player.getId();
 
-        // Already submitted this round
-        if (roundReactionTimes.containsKey(pId)) {
-            return;
+        if (roundScores.containsKey(pId)) {
+            return; // Already submitted
         }
 
-        if (waitingForTrigger) {
-            // Clicked too early before trigger -> FALSE START
-            roundReactionTimes.put(pId, -1L);
-            System.out.println("[Match " + room.getId() + "] " + player.getName() + " FALSE START!");
-            room.broadcast(Protocol.PLAYER_SCORED + "|" + pId + "|" + player.getName());
-        } else if (roundActive) {
-            long serverDelta = System.currentTimeMillis() - roundTriggerTime;
-            // The client measures local high-precision time from trigger render to pointer down.
-            // serverDelta covers (network down + client reaction + network up).
-            long reaction;
-            if (clientReportedTime >= 80 && clientReportedTime <= serverDelta + 300) {
-                // Legitimate human reaction within network tolerance
-                reaction = clientReportedTime;
-            } else if (clientReportedTime > 0) {
-                // If client somehow reported anomalous or late, clamp to sensible bound
-                reaction = Math.min(clientReportedTime, Math.max(80, serverDelta));
-            } else {
-                reaction = Math.max(80, serverDelta);
+        String gameId = getCurrentGameId();
+
+        if ("reaction-rush".equalsIgnoreCase(gameId)) {
+            if (waitingForTrigger) {
+                // False start
+                roundScores.put(pId, -1L);
+                System.out.println("[Match " + room.getId() + "] " + player.getName() + " FALSE START!");
+                room.broadcast(Protocol.PLAYER_SCORED + "|" + pId + "|" + player.getName());
+            } else if (roundActive) {
+                long serverDelta = System.currentTimeMillis() - roundTriggerTime;
+                long reaction;
+                if (clientReportedValue >= 80 && clientReportedValue <= serverDelta + 300) {
+                    reaction = clientReportedValue;
+                } else if (clientReportedValue > 0) {
+                    reaction = Math.min(clientReportedValue, Math.max(80, serverDelta));
+                } else {
+                    reaction = Math.max(80, serverDelta);
+                }
+                roundScores.put(pId, reaction);
+                System.out.println("[Match " + room.getId() + "] " + player.getName() + " scored: " + reaction + "ms");
+                room.broadcast(Protocol.PLAYER_SCORED + "|" + pId + "|" + player.getName());
             }
-            roundReactionTimes.put(pId, reaction);
-            System.out.println("[Match " + room.getId() + "] " + player.getName() + " scored: " + reaction + "ms (client=" + clientReportedTime + ", serverDelta=" + serverDelta + "ms)");
+        } else {
+            // Direct score for Sequence Memory, Number Recall, Visual Memory, Aim Trainer
+            long score = Math.max(0, clientReportedValue);
+            roundScores.put(pId, score);
+            System.out.println("[Match " + room.getId() + "] " + player.getName() + " scored " + score + " pts in " + gameId);
             room.broadcast(Protocol.PLAYER_SCORED + "|" + pId + "|" + player.getName());
         }
 
-        // If all active players in the room have clicked, end round immediately
-        if (roundReactionTimes.size() >= room.getPlayerCount()) {
+        // If all players in the room have finished, end round immediately
+        if (roundScores.size() >= room.getPlayerCount()) {
             if (timeoutFuture != null && !timeoutFuture.isDone()) {
                 timeoutFuture.cancel(false);
             }
-            scheduler.schedule(this::endRound, 300, TimeUnit.MILLISECONDS);
+            scheduler.schedule(this::endRound, 400, TimeUnit.MILLISECONDS);
         }
     }
 
@@ -147,45 +221,48 @@ public class MatchSession {
         roundActive = false;
         waitingForTrigger = false;
 
+        String gameId = getCurrentGameId();
+        boolean isReaction = "reaction-rush".equalsIgnoreCase(gameId);
+
         StringBuilder sb = new StringBuilder();
         sb.append(Protocol.ROUND_RESULTS).append("|").append(currentRound);
 
         for (Player p : room.getPlayers()) {
-            Long reaction = roundReactionTimes.getOrDefault(p.getId(), -2L);
+            Long rawVal = roundScores.getOrDefault(p.getId(), isReaction ? -2L : 0L);
             int points = 0;
 
-            if (reaction > 0) {
-                // Higher score for faster reaction: e.g. 150ms -> 850 pts, 300ms -> 700 pts
-                points = (int) Math.max(100, 1000 - reaction);
-            } else if (reaction == -1L) {
-                points = 0; // False start
+            if (isReaction) {
+                if (rawVal > 0) {
+                    points = (int) Math.max(100, 1000 - rawVal);
+                } else {
+                    points = 0;
+                }
             } else {
-                points = 0; // Timeout
+                points = (int) Math.max(0, rawVal);
             }
 
             final int pts = points;
             int newTotal = totalScores.compute(p.getId(), (k, v) -> (v == null ? 0 : v) + pts);
 
-            // Entry format: playerId,playerName,reactionMs,roundPoints,totalPoints
+            // Format: playerId,playerName,rawScoreOrReaction,roundPoints,totalPoints
             sb.append("|")
               .append(p.getId()).append(",")
               .append(p.getName()).append(",")
-              .append(reaction).append(",")
+              .append(rawVal).append(",")
               .append(points).append(",")
               .append(newTotal);
         }
 
-        System.out.println("[Match " + room.getId() + "] Round " + currentRound + " Results: " + sb);
+        System.out.println("[Match " + room.getId() + "] Round " + currentRound + " Results (" + gameId + "): " + sb);
         room.broadcast(sb.toString());
 
-        // Wait 5 seconds to view results before moving to next round
-        scheduler.schedule(this::startNextRound, 5, TimeUnit.SECONDS);
+        // Display results for 4 seconds before advancing
+        scheduler.schedule(this::startNextRound, 4, TimeUnit.SECONDS);
     }
 
     private void finishMatch() {
-        System.out.println("[Match " + room.getId() + "] Match finished!");
+        System.out.println("[Match " + room.getId() + "] All games complete! Declaring match winner.");
 
-        // Sort by total score descending
         List<PlayerScore> leaderboard = new ArrayList<>();
         for (Player p : room.getPlayers()) {
             int score = totalScores.getOrDefault(p.getId(), 0);
