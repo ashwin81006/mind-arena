@@ -36,6 +36,7 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
   const submitScore = arenaContext?.submitScore;
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
+  const currentRoomId = arenaContext?.currentRoomId;
 
   // Phase: 'SHOWING' | 'SELECTING' | 'VALIDATING' | 'GAME_OVER'
   const [phase, setPhase] = useState('SHOWING');
@@ -53,6 +54,11 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
   const targetTilesRef = useRef(new Set());
   const selectedTilesRef = useRef(new Set());
   const levelRef = useRef(1);
+  const phaseRef = useRef('SHOWING');
+  const totalCorrectRef = useRef(0);
+  const totalIncorrectRef = useRef(0);
+  const scoreSubmittedRef = useRef(false);
+  const prngRef = useRef(null);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
@@ -71,6 +77,22 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     };
   }, [clearAllTimers]);
 
+  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  const createSeededPRNG = (seedString) => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < seedString.length; i++) {
+      h = Math.imul(h ^ seedString.charCodeAt(i), 16777619);
+    }
+    let s = h >>> 0;
+    return function() {
+      s |= 0;
+      s = s + 0x6D2B79F5 | 0;
+      let t = Math.imul(s ^ s >>> 15, 1 | s);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  };
+
   // Start a specific level
   const startLevel = useCallback((lvl) => {
     clearAllTimers();
@@ -80,11 +102,12 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     const { gridSize: size, tileCount } = getVisualMemoryConfig(lvl);
     setGridSize(size);
 
-    // Pick random unique tile indices
+    // Pick deterministic random unique tile indices using room-seeded PRNG
+    const rand = prngRef.current || Math.random;
     const totalCells = size * size;
     const targetSet = new Set();
     while (targetSet.size < tileCount) {
-      targetSet.add(Math.floor(Math.random() * totalCells));
+      targetSet.add(Math.floor(rand() * totalCells));
     }
 
     setTargetTiles(targetSet);
@@ -93,11 +116,13 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     selectedTilesRef.current = new Set();
     setValidationResult(null);
     setPhase('SHOWING');
+    phaseRef.current = 'SHOWING';
 
     // Memorization duration: e.g. 1300ms + (tileCount * 50ms)
     const memorizationTime = 1300 + (tileCount * 50);
     addTimer(() => {
       setPhase('SELECTING');
+      phaseRef.current = 'SELECTING';
     }, memorizationTime);
   }, [addTimer, clearAllTimers]);
 
@@ -107,16 +132,27 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     setScoreSubmitted(false);
     setTotalCorrectAccumulated(0);
     setTotalIncorrectAccumulated(0);
+    totalCorrectRef.current = 0;
+    totalIncorrectRef.current = 0;
+    scoreSubmittedRef.current = false;
+    phaseRef.current = 'SHOWING';
+
+    // Seeded PRNG for multiplayer competitive equality
+    const seed = (!isPractice && currentRoomId)
+      ? `${currentRoomId}_vm_round_${gameState?.currentRound || 1}`
+      : `vm_${Date.now()}_${Math.random()}`;
+
+    prngRef.current = createSeededPRNG(seed);
     startLevel(1);
-  }, [clearAllTimers, startLevel]);
+  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, startLevel]);
 
   useEffect(() => {
     startGame();
-  }, [gameState?.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Player clicks/deselects a tile during SELECTING phase
   const handleTileClick = (index) => {
-    if (phase !== 'SELECTING') return;
+    if (phaseRef.current !== 'SELECTING') return;
 
     setSelectedTiles((prev) => {
       const next = new Set(prev);
@@ -132,7 +168,9 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
 
   // Submit player's selection
   const handleSubmit = () => {
-    if (phase !== 'SELECTING') return;
+    if (phaseRef.current !== 'SELECTING') return;
+    phaseRef.current = 'VALIDATING';
+    setPhase('VALIDATING');
 
     const targets = targetTilesRef.current;
     const selected = selectedTilesRef.current;
@@ -159,13 +197,14 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
       missedIndices: [...targets].filter((idx) => !selected.has(idx))
     });
 
-    setPhase('VALIDATING');
-
     if (isCorrect) {
       // SUCCESS!
       const completedLevel = levelRef.current;
-      setTotalCorrectAccumulated((prev) => prev + correctCount);
-      const newScore = calculateVisualMemoryScore(completedLevel, totalCorrectAccumulated + correctCount);
+      const newCorrectTotal = totalCorrectRef.current + correctCount;
+      totalCorrectRef.current = newCorrectTotal;
+      setTotalCorrectAccumulated(newCorrectTotal);
+
+      const newScore = calculateVisualMemoryScore(completedLevel, newCorrectTotal);
       setScore(newScore);
 
       addTimer(() => {
@@ -173,22 +212,27 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
       }, 1000);
     } else {
       // WRONG -> GAME OVER
-      setTotalIncorrectAccumulated((prev) => prev + incorrectCount + missingCount);
+      const newIncorrectTotal = totalIncorrectRef.current + incorrectCount + missingCount;
+      totalIncorrectRef.current = newIncorrectTotal;
+      setTotalIncorrectAccumulated(newIncorrectTotal);
+
       const finalCompletedLevels = Math.max(0, levelRef.current - 1);
-      const finalScore = calculateVisualMemoryScore(finalCompletedLevels, totalCorrectAccumulated + correctCount);
+      const finalScore = calculateVisualMemoryScore(finalCompletedLevels, totalCorrectRef.current);
       setScore(finalScore);
 
       addTimer(() => {
+        phaseRef.current = 'GAME_OVER';
         setPhase('GAME_OVER');
         const result = {
           game: 'VISUAL_MEMORY',
           score: finalScore,
           highestLevel: finalCompletedLevels,
-          correctTiles: totalCorrectAccumulated + correctCount,
-          incorrectTiles: totalIncorrectAccumulated + incorrectCount + missingCount
+          correctTiles: totalCorrectRef.current,
+          incorrectTiles: newIncorrectTotal
         };
 
-        if (!scoreSubmitted) {
+        if (!scoreSubmittedRef.current) {
+          scoreSubmittedRef.current = true;
           setScoreSubmitted(true);
           if (submitScore) {
             submitScore(finalScore);

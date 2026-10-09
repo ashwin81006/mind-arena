@@ -13,10 +13,11 @@ export function calculateNumberRecallScore(completedLevels, digitsRecalled = 0) 
 /**
  * Generates a random number strictly as a STRING to preserve leading zeroes.
  */
-export function generateNumberString(length) {
+export function generateNumberString(prng, length) {
+  const rand = prng || Math.random;
   let str = '';
   for (let i = 0; i < length; i++) {
-    str += Math.floor(Math.random() * 10).toString();
+    str += Math.floor(rand() * 10).toString();
   }
   return str;
 }
@@ -28,6 +29,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
   const submitScore = arenaContext?.submitScore;
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
+  const currentRoomId = arenaContext?.currentRoomId;
 
   // Phase: 'MEMORIZING' | 'INPUT' | 'FEEDBACK_SUCCESS' | 'GAME_OVER'
   const [phase, setPhase] = useState('MEMORIZING');
@@ -44,6 +46,9 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
   const countdownIntervalRef = useRef(null);
   const targetNumberRef = useRef('');
   const levelRef = useRef(1);
+  const phaseRef = useRef('MEMORIZING');
+  const scoreSubmittedRef = useRef(false);
+  const prngRef = useRef(null);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
@@ -60,6 +65,22 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     return id;
   }, []);
 
+  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  const createSeededPRNG = (seedString) => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < seedString.length; i++) {
+      h = Math.imul(h ^ seedString.charCodeAt(i), 16777619);
+    }
+    let s = h >>> 0;
+    return function() {
+      s |= 0;
+      s = s + 0x6D2B79F5 | 0;
+      let t = Math.imul(s ^ s >>> 15, 1 | s);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  };
+
   useEffect(() => {
     return () => {
       clearAllTimers();
@@ -75,7 +96,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
 
     // Level 1: 3 digits. Level 2: 4 digits, Level 3: 5 digits...
     const digitCount = lvl + 2;
-    const numStr = generateNumberString(digitCount);
+    const numStr = generateNumberString(prngRef.current, digitCount);
     setTargetNumber(numStr);
     targetNumberRef.current = numStr;
 
@@ -84,6 +105,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     setTotalDisplayTimeMs(duration);
     setTimeLeftMs(duration);
     setPhase('MEMORIZING');
+    phaseRef.current = 'MEMORIZING';
 
     const startTime = performance.now();
     countdownIntervalRef.current = setInterval(() => {
@@ -105,6 +127,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
         countdownIntervalRef.current = null;
       }
       setPhase('INPUT');
+      phaseRef.current = 'INPUT';
       setTimeLeftMs(0);
       setTimeout(() => {
         if (inputRef.current) {
@@ -115,13 +138,14 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
   }, [addTimer, clearAllTimers]);
 
   const handleSkipMemorize = () => {
-    if (phase !== 'MEMORIZING') return;
+    if (phaseRef.current !== 'MEMORIZING') return;
     if (countdownIntervalRef.current) {
       clearInterval(countdownIntervalRef.current);
       countdownIntervalRef.current = null;
     }
     clearAllTimers();
     setPhase('INPUT');
+    phaseRef.current = 'INPUT';
     setTimeLeftMs(0);
     setTimeout(() => {
       if (inputRef.current) {
@@ -134,16 +158,25 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     clearAllTimers();
     setScore(0);
     setScoreSubmitted(false);
+    scoreSubmittedRef.current = false;
+    phaseRef.current = 'MEMORIZING';
+
+    // Seeded PRNG for multiplayer competitive equality
+    const seed = (!isPractice && currentRoomId)
+      ? `${currentRoomId}_nr_round_${gameState?.currentRound || 1}`
+      : `nr_${Date.now()}_${Math.random()}`;
+
+    prngRef.current = createSeededPRNG(seed);
     startLevel(1);
-  }, [clearAllTimers, startLevel]);
+  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, startLevel]);
 
   useEffect(() => {
     startGame();
-  }, [gameState?.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
-    if (phase !== 'INPUT') return;
+    if (phaseRef.current !== 'INPUT') return;
 
     const trimmedInput = playerInput.trim();
     const correctString = targetNumberRef.current;
@@ -155,6 +188,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
       const newScore = calculateNumberRecallScore(completedLevel, digitsRecalled);
       setScore(newScore);
       setPhase('FEEDBACK_SUCCESS');
+      phaseRef.current = 'FEEDBACK_SUCCESS';
 
       addTimer(() => {
         startLevel(completedLevel + 1);
@@ -162,6 +196,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     } else {
       // INCORRECT ANSWER -> GAME OVER
       setPhase('GAME_OVER');
+      phaseRef.current = 'GAME_OVER';
       const finalCompletedLevels = Math.max(0, levelRef.current - 1);
       const digitsRecalled = Math.max(0, finalCompletedLevels + 2);
       const finalScore = calculateNumberRecallScore(finalCompletedLevels, digitsRecalled);
@@ -174,7 +209,8 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
         digitsRecalled
       };
 
-      if (!scoreSubmitted) {
+      if (!scoreSubmittedRef.current) {
+        scoreSubmittedRef.current = true;
         setScoreSubmitted(true);
         if (submitScore) {
           submitScore(finalScore);

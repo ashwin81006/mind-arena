@@ -137,8 +137,8 @@ public class MatchSession {
             roundActive = true;
             roundTriggerTime = System.currentTimeMillis();
 
-            // Set generous 60-second round timeout in case player disconnects
-            timeoutFuture = scheduler.schedule(this::endRound, 60, TimeUnit.SECONDS);
+            // Set generous 120-second round timeout in case player disconnects
+            timeoutFuture = scheduler.schedule(this::endRound, 120, TimeUnit.SECONDS);
         }
     }
 

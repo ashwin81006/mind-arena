@@ -83,18 +83,19 @@ export default function MatchScreen() {
   // Active mini-game or round results
   if (gameState) {
     const rawId = (gameState.gameId || '').toLowerCase().replace(/_/g, '-');
+    const roundKey = `${rawId}-${gameState.gameIndex || 1}-${gameState.currentRound || 1}`;
     switch (rawId) {
       case 'sequence-memory':
-        return <SequenceMemoryGame />;
+        return <SequenceMemoryGame key={roundKey} />;
       case 'number-recall':
-        return <NumberRecallGame />;
+        return <NumberRecallGame key={roundKey} />;
       case 'visual-memory':
-        return <VisualMemoryGame />;
+        return <VisualMemoryGame key={roundKey} />;
       case 'aim-trainer':
-        return <AimTrainerGame />;
+        return <AimTrainerGame key={roundKey} />;
       case 'reaction-rush':
       default:
-        return <ReactionRushGame />;
+        return <ReactionRushGame key={roundKey} />;
     }
   }
 

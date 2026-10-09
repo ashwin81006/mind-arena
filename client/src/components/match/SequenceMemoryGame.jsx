@@ -19,6 +19,8 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
 
+  const currentRoomId = arenaContext?.currentRoomId;
+
   // Phase: 'IDLE' | 'SHOWING' | 'INPUT' | 'LEVEL_SUCCESS' | 'GAME_OVER'
   const [phase, setPhase] = useState('IDLE');
   const [level, setLevel] = useState(1);
@@ -35,6 +37,8 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
   const levelRef = useRef(1);
   const phaseRef = useRef('IDLE');
   const timerIdsRef = useRef([]);
+  const prngRef = useRef(null);
+  const isInputLockedRef = useRef(false);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
@@ -54,13 +58,32 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     };
   }, [clearAllTimers]);
 
-  // Generate random sequence of tiles (3x3 grid, tiles 0-8)
-  const generateSequence = (length) => {
-    const seq = [];
-    for (let i = 0; i < length; i++) {
-      seq.push(Math.floor(Math.random() * 9));
+  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  const createSeededPRNG = (seedString) => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < seedString.length; i++) {
+      h = Math.imul(h ^ seedString.charCodeAt(i), 16777619);
     }
-    return seq;
+    let s = h >>> 0;
+    return function() {
+      s |= 0;
+      s = s + 0x6D2B79F5 | 0;
+      let t = Math.imul(s ^ s >>> 15, 1 | s);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  };
+
+  // Generate a random tile (0-8) that is never identical to the immediately preceding tile
+  const getNextTile = (prng, lastTile) => {
+    const rand = prng || Math.random;
+    let next = Math.floor(rand() * 9);
+    if (lastTile !== null && lastTile !== undefined) {
+      while (next === lastTile) {
+        next = Math.floor(rand() * 9);
+      }
+    }
+    return next;
   };
 
   // Play the sequence by highlighting tiles one by one
@@ -95,21 +118,26 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
       phaseRef.current = 'INPUT';
       setPlayerStep(0);
       playerStepRef.current = 0;
+      isInputLockedRef.current = false;
     }, finishTime);
   }, [addTimer, clearAllTimers]);
 
-  // Start new game or level
-  const startLevel = useCallback((lvl) => {
-    setLevel(lvl);
-    levelRef.current = lvl;
-    // Initial Level: 3 tiles. Level 2 -> 4 tiles, Level 3 -> 5 tiles...
-    const seqLength = lvl + 2;
-    const newSeq = generateSequence(seqLength);
-    setSequence(newSeq);
-    sequenceRef.current = newSeq;
+  // Advance to next level: keep existing sequence and append exactly ONE new tile
+  const advanceToNextLevel = useCallback(() => {
+    const nextLvl = levelRef.current + 1;
+    setLevel(nextLvl);
+    levelRef.current = nextLvl;
+
+    const currentSeq = sequenceRef.current;
+    const lastTile = currentSeq[currentSeq.length - 1];
+    const newTile = getNextTile(prngRef.current, lastTile);
+    const nextSeq = [...currentSeq, newTile];
+
+    setSequence(nextSeq);
+    sequenceRef.current = nextSeq;
     setPlayerStep(0);
     playerStepRef.current = 0;
-    playSequence(newSeq);
+    playSequence(nextSeq);
   }, [playSequence]);
 
   // Start game from beginning
@@ -119,18 +147,48 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     setScoreSubmitted(false);
     setWrongTile(null);
     setActiveTile(null);
-    startLevel(1);
-  }, [clearAllTimers, startLevel]);
+    isInputLockedRef.current = false;
 
-  // Auto-start when mounted or round starts
+    // Seeded generator: all players in the room receive the exact same sequence for fair esports competition
+    const seed = (!isPractice && currentRoomId)
+      ? `${currentRoomId}_round_${gameState?.currentRound || 1}`
+      : `seq_${Date.now()}_${Math.random()}`;
+
+    const prng = createSeededPRNG(seed);
+    prngRef.current = prng;
+
+    // Level 1 starts with 3 tiles (no consecutive duplicates)
+    const t0 = getNextTile(prng, null);
+    const t1 = getNextTile(prng, t0);
+    const t2 = getNextTile(prng, t1);
+    const initialSeq = [t0, t1, t2];
+
+    setLevel(1);
+    levelRef.current = 1;
+    setSequence(initialSeq);
+    sequenceRef.current = initialSeq;
+    setPlayerStep(0);
+    playerStepRef.current = 0;
+
+    playSequence(initialSeq);
+  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, playSequence]);
+
+  // Auto-start when mounted
   useEffect(() => {
     startGame();
-  }, [gameState?.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle player tile click
   const handleTileClick = (tileIndex) => {
     // Guard: ignore clicks during display phase or game over
     if (phaseRef.current !== 'INPUT') return;
+
+    // Input debounce guard: prevent rapid-tap/touch double fire
+    if (isInputLockedRef.current) return;
+    isInputLockedRef.current = true;
+    addTimer(() => {
+      isInputLockedRef.current = false;
+    }, 120);
 
     const currentSeq = sequenceRef.current;
     const currentStep = playerStepRef.current;
@@ -153,10 +211,10 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
         setPhase('LEVEL_SUCCESS');
         phaseRef.current = 'LEVEL_SUCCESS';
 
-        // Brief celebration then move to next level
+        // Brief celebration then move to next level (appending +1 tile)
         addTimer(() => {
-          startLevel(completedLevel + 1);
-        }, 900);
+          advanceToNextLevel();
+        }, 800);
       }
     } else {
       // INCORRECT TILE -> GAME OVER

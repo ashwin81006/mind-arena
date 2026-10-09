@@ -6,24 +6,51 @@ const TARGET_SIZE_PX = 56;
 
 /**
  * Isolated scoring formula for Aim Trainer.
- * Rewards both fast reaction time and high accuracy.
+ * Primary driver: Shorter completion time = significantly higher score.
+ * Accuracy acts as a precision multiplier to prevent spam-clicking.
  */
-export function calculateAimTrainerScore(hits, misses, avgReactionMs) {
+export function calculateAimTrainerScore(hits, misses, totalTimeMsOrAvg, legacyAvg) {
   if (hits === 0) return 0;
   const totalClicks = hits + misses;
   const accuracy = hits / Math.max(1, totalClicks);
 
-  // Speed points: up to 1000 points. 150ms or faster gives full speed points, 900ms or slower gives 0
-  const clampedReaction = Math.min(900, Math.max(150, avgReactionMs));
-  const speedRatio = (900 - clampedReaction) / (900 - 150);
-  const speedBonus = Math.round(speedRatio * 1000);
+  // Resolve total completion time in milliseconds
+  let timeMs = totalTimeMsOrAvg;
+  if (!timeMs || (timeMs < 2000 && !legacyAvg)) {
+    // If called with average reaction time instead of total time, extrapolate
+    timeMs = (totalTimeMsOrAvg || legacyAvg || 400) * hits;
+  }
 
-  // Target points: 50 pts per target hit (up to 1000 pts for 20 hits)
-  const targetBonus = hits * 50;
+  // Shorter completion time => More points
+  // 4,000ms or faster: ~2000+ points (pro esports benchmark ~200ms/target)
+  // 6,000ms: ~1877 points (~300ms/target)
+  // 8,000ms: ~1738 points (~400ms/target)
+  // 10,000ms: ~1600 points (~500ms/target)
+  // 14,000ms: ~1323 points (~700ms/target)
+  // 20,000ms: ~908 points (~1000ms/target)
+  // 30,000ms: ~200 points (~1500ms/target)
+  // > 30,000ms: scales down to min 50 points
+  const minTime = 4000;  // 4.0 seconds
+  const maxTime = 30000; // 30.0 seconds
 
-  // Final score weighted by accuracy
-  const totalScore = Math.round((targetBonus + speedBonus) * Math.pow(accuracy, 1.4));
-  return Math.max(0, totalScore);
+  let timeScore;
+  if (timeMs <= minTime) {
+    timeScore = 2000 + Math.min(250, Math.round((minTime - timeMs) / 4));
+  } else if (timeMs <= maxTime) {
+    const ratio = (maxTime - timeMs) / (maxTime - minTime);
+    timeScore = 200 + Math.round(ratio * 1800);
+  } else {
+    timeScore = Math.max(50, Math.round(200 - (timeMs - maxTime) / 100));
+  }
+
+  // Target completion ratio
+  const completionRatio = hits / TOTAL_TARGETS;
+
+  // Precision multiplier: penalizes random stray clicks
+  const accuracyMultiplier = Math.pow(accuracy, 1.2);
+
+  const finalScore = Math.round(timeScore * completionRatio * accuracyMultiplier);
+  return Math.max(0, finalScore);
 }
 
 export default function AimTrainerGame({ onComplete, isPractice = false, onBackToHome }) {
@@ -33,6 +60,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
   const submitScore = arenaContext?.submitScore;
   const isHost = arenaContext?.isHost;
   const returnToLobby = arenaContext?.returnToLobby;
+  const currentRoomId = arenaContext?.currentRoomId;
 
   // Phase: 'PREPARE' | 'ACTIVE' | 'GAME_OVER'
   const [phase, setPhase] = useState('PREPARE');
@@ -42,6 +70,8 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
   const [misses, setMisses] = useState(0);
   const [recentReaction, setRecentReaction] = useState(null);
   const [avgReaction, setAvgReaction] = useState(null);
+  const [completionTime, setCompletionTime] = useState(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState('0.0');
   const [finalScore, setFinalScore] = useState(0);
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
   const [missAnimation, setMissAnimation] = useState(null); // click coordinate for miss splash
@@ -49,10 +79,14 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
   const containerRef = useRef(null);
   const spawnTimeRef = useRef(0);
   const gameStartTimeRef = useRef(0);
+  const clockIntervalRef = useRef(null);
   const reactionTimesRef = useRef([]);
   const hitsRef = useRef(0);
   const missesRef = useRef(0);
   const timerIdsRef = useRef([]);
+  const phaseRef = useRef('PREPARE');
+  const scoreSubmittedRef = useRef(false);
+  const prngRef = useRef(null);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
@@ -65,19 +99,39 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
     return id;
   }, []);
 
+  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  const createSeededPRNG = (seedString) => {
+    let h = 2166136261 >>> 0;
+    for (let i = 0; i < seedString.length; i++) {
+      h = Math.imul(h ^ seedString.charCodeAt(i), 16777619);
+    }
+    let s = h >>> 0;
+    return function() {
+      s |= 0;
+      s = s + 0x6D2B79F5 | 0;
+      let t = Math.imul(s ^ s >>> 15, 1 | s);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  };
+
   useEffect(() => {
     return () => {
       clearAllTimers();
+      if (clockIntervalRef.current) {
+        clearInterval(clockIntervalRef.current);
+        clockIntervalRef.current = null;
+      }
     };
   }, [clearAllTimers]);
 
-  // Compute next random target coordinate avoiding margins
+  // Compute next target coordinate avoiding margins (room-seeded for multiplayer parity)
   const spawnNextTarget = useCallback(() => {
-    // Generate safe percentage coordinates between 8% and 92%
-    const minPct = 10;
-    const maxPct = 90;
-    const nextX = Math.floor(minPct + Math.random() * (maxPct - minPct));
-    const nextY = Math.floor(minPct + Math.random() * (maxPct - minPct));
+    const minPct = 12;
+    const maxPct = 88;
+    const rand = prngRef.current || Math.random;
+    const nextX = Math.floor(minPct + rand() * (maxPct - minPct));
+    const nextY = Math.floor(minPct + rand() * (maxPct - minPct));
 
     setTargetPos({ x: nextX, y: nextY });
     spawnTimeRef.current = performance.now();
@@ -86,33 +140,52 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
   // Start the 20-target game session
   const startGame = useCallback(() => {
     clearAllTimers();
+    if (clockIntervalRef.current) {
+      clearInterval(clockIntervalRef.current);
+      clockIntervalRef.current = null;
+    }
     setHits(0);
     setMisses(0);
     setTargetCount(0);
     setRecentReaction(null);
     setAvgReaction(null);
+    setCompletionTime(null);
+    setElapsedSeconds('0.0');
     setFinalScore(0);
     setScoreSubmitted(false);
+    scoreSubmittedRef.current = false;
     setMissAnimation(null);
     hitsRef.current = 0;
     missesRef.current = 0;
     reactionTimesRef.current = [];
 
+    // Seeded PRNG for multiplayer competitive equality
+    const seed = (!isPractice && currentRoomId)
+      ? `${currentRoomId}_aim_round_${gameState?.currentRound || 1}`
+      : `aim_${Date.now()}_${Math.random()}`;
+
+    prngRef.current = createSeededPRNG(seed);
+    phaseRef.current = 'ACTIVE';
     setPhase('ACTIVE');
-    gameStartTimeRef.current = performance.now();
+    const startNow = performance.now();
+    gameStartTimeRef.current = startNow;
+    clockIntervalRef.current = setInterval(() => {
+      const elapsed = (performance.now() - gameStartTimeRef.current) / 1000;
+      setElapsedSeconds(elapsed.toFixed(1));
+    }, 100);
     spawnNextTarget();
-  }, [clearAllTimers, spawnNextTarget]);
+  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, spawnNextTarget]);
 
   useEffect(() => {
     startGame();
-  }, [gameState?.currentRound]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle successful hit on target
   const handleTargetClick = (e) => {
     if (e) {
       e.stopPropagation(); // Prevent container miss event
     }
-    if (phase !== 'ACTIVE') return;
+    if (phaseRef.current !== 'ACTIVE') return;
 
     const hitTime = performance.now();
     const spawnTime = spawnTimeRef.current || hitTime;
@@ -133,14 +206,22 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
 
     if (nextHits >= TOTAL_TARGETS) {
       // Completed all 20 targets -> GAME OVER!
+      phaseRef.current = 'GAME_OVER';
+      setPhase('GAME_OVER');
+      if (clockIntervalRef.current) {
+        clearInterval(clockIntervalRef.current);
+        clockIntervalRef.current = null;
+      }
       const totalTime = Math.round(performance.now() - gameStartTimeRef.current);
+      setCompletionTime(totalTime);
+      setElapsedSeconds((totalTime / 1000).toFixed(2));
       const totalMisses = missesRef.current;
       const totalClicks = nextHits + totalMisses;
       const accuracy = Math.round((nextHits / Math.max(1, totalClicks)) * 100) / 100;
 
-      const calculatedScore = calculateAimTrainerScore(nextHits, totalMisses, avg);
+      // Primary score driver: shorter completion time = higher score
+      const calculatedScore = calculateAimTrainerScore(nextHits, totalMisses, totalTime, avg);
       setFinalScore(calculatedScore);
-      setPhase('GAME_OVER');
 
       const result = {
         game: 'AIM_TRAINER',
@@ -152,7 +233,8 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
         totalTime
       };
 
-      if (!scoreSubmitted) {
+      if (!scoreSubmittedRef.current) {
+        scoreSubmittedRef.current = true;
         setScoreSubmitted(true);
         if (submitScore) {
           submitScore(calculatedScore);
@@ -169,7 +251,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
 
   // Handle click on container (outside target) -> Miss!
   const handleArenaClick = (e) => {
-    if (phase !== 'ACTIVE') return;
+    if (phaseRef.current !== 'ACTIVE') return;
 
     const nextMisses = missesRef.current + 1;
     missesRef.current = nextMisses;
@@ -279,16 +361,18 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
 
         <div className="stats-summary-grid">
           <div className="stat-summary-box">
-            <span className="stat-label">Avg Reaction</span>
-            <span className="stat-value text-good">{avgReaction || 0} ms</span>
+            <span className="stat-label">Completion Time</span>
+            <span className="stat-value text-good">
+              {completionTime ? `${(completionTime / 1000).toFixed(2)}s` : `${elapsedSeconds}s`}
+            </span>
+          </div>
+          <div className="stat-summary-box">
+            <span className="stat-label">Avg / Target</span>
+            <span className="stat-value">{avgReaction || 0} ms</span>
           </div>
           <div className="stat-summary-box">
             <span className="stat-label">Accuracy</span>
             <span className="stat-value">{accuracyPct}%</span>
-          </div>
-          <div className="stat-summary-box">
-            <span className="stat-label">Hits / Misses</span>
-            <span className="stat-value">{hits} / {misses}</span>
           </div>
           <div className="stat-summary-box highlight-box">
             <span className="stat-label">Final Score</span>
@@ -346,7 +430,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
       {phase === 'PREPARE' ? (
         <div className="aim-start-card">
           <h2>Ready to Test Your Aim?</h2>
-          <p>Click 20 appearing targets as quickly and accurately as possible.</p>
+          <p>Click 20 appearing targets as quickly and accurately as possible. Faster completion = higher score!</p>
           <button className="btn btn-primary btn-lg" onClick={startGame}>
             START AIM TRAINER
           </button>
@@ -358,6 +442,10 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
             <div className="hud-metric">
               <span className="hud-metric-label">Remaining:</span>
               <span className="hud-metric-value">{TOTAL_TARGETS - targetCount}</span>
+            </div>
+            <div className="hud-metric">
+              <span className="hud-metric-label">Time:</span>
+              <span className="hud-metric-value text-good">{elapsedSeconds}s</span>
             </div>
             <div className="hud-metric">
               <span className="hud-metric-label">Last Hit:</span>

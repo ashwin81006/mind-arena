@@ -1,131 +1,61 @@
 import React, { useState, useEffect } from 'react';
 import { useArena } from '../../context/ArenaContext';
 
-const GAME_INFO_MAP = {
+const GAME_PREVIEWS = {
   'reaction-rush': {
     id: 'reaction-rush',
-    name: 'Reaction Rush',
+    title: 'Reaction Rush',
     icon: '⚡',
-    category: 'Reflex & Speed',
-    summary: 'Test your raw neurological reaction speed when the screen turns green.',
-    instructions: [
-      {
-        icon: '🔴',
-        title: 'Wait for Green',
-        text: 'Do NOT click or tap while the screen is red. Stay focused!'
-      },
-      {
-        icon: '⚠️',
-        title: 'Avoid False Starts',
-        text: 'Clicking early while red gives an immediate False Start (0 points).'
-      },
-      {
-        icon: '🟢',
-        title: 'Click Instantly',
-        text: 'The millisecond the screen turns green, click or tap immediately!'
-      }
-    ],
-    scoringTip: 'Faster reactions earn higher points (up to 1,000 pts per round).'
+    tagline: 'Click the instant it turns GREEN. Do NOT click RED.',
+    category: 'Reflex Test',
+    objective: 'Click immediately when green flashes',
+    penalty: 'Clicking red = False Start (0 pts)',
+    scoring: 'Faster reaction (ms) = higher rank',
+    type: 'reaction'
   },
   'sequence-memory': {
     id: 'sequence-memory',
-    name: 'Sequence Memory',
+    title: 'Sequence Memory',
     icon: '🧠',
-    category: 'Pattern & Memory',
-    summary: 'Memorize and reproduce increasingly long sequences of flashing tiles in a 3×3 grid.',
-    instructions: [
-      {
-        icon: '👀',
-        title: 'Watch the Sequence',
-        text: 'Observe the 3×3 grid closely as tiles light up in order.'
-      },
-      {
-        icon: '👆',
-        title: 'Repeat the Pattern',
-        text: 'When input unlocks, tap the exact same tiles in the identical sequence.'
-      },
-      {
-        icon: '❌',
-        title: 'One Strike & Out',
-        text: 'Each level adds +1 tile. A single wrong tap ends your round immediately!'
-      }
-    ],
-    scoringTip: 'Each completed level awards exponentially higher tournament points.'
+    tagline: 'Memorize the flashing tiles. Repeat the exact pattern.',
+    category: 'Pattern Recall',
+    objective: 'Repeat the 3×3 pattern in exact order',
+    penalty: '1 wrong tile ends your round',
+    scoring: '+1 tile added every level cleared',
+    type: 'sequence'
   },
   'aim-trainer': {
     id: 'aim-trainer',
-    name: 'Aim Trainer',
+    title: 'Aim Trainer',
     icon: '🎯',
-    category: 'Precision & Reflex',
-    summary: 'Click 20 moving targets across the arena with lightning speed and pinpoint accuracy.',
-    instructions: [
-      {
-        icon: '🎯',
-        title: 'Hit the Targets',
-        text: 'Targets appear randomly across the screen. Click them as quickly as possible.'
-      },
-      {
-        icon: '⚡',
-        title: '20 Total Targets',
-        text: 'Eliminate all 20 targets in rapid succession to complete your run.'
-      },
-      {
-        icon: '📉',
-        title: 'Precision Counts',
-        text: 'Clicks outside target circles reduce your accuracy percentage and final score.'
-      }
-    ],
-    scoringTip: 'Final score is calculated from speed per target multiplied by accuracy.'
+    tagline: 'Eliminate all 20 targets as fast as possible. Faster completion = higher score!',
+    category: 'Speed & Precision',
+    objective: 'Click 20 targets rapidly in succession',
+    penalty: 'Stray clicks reduce your accuracy %',
+    scoring: 'Faster completion time + accuracy %',
+    type: 'aim'
   },
   'number-recall': {
     id: 'number-recall',
-    name: 'Number Recall',
+    title: 'Number Recall',
     icon: '🔢',
+    tagline: 'Memorize the digits before they disappear. Type them back.',
     category: 'Working Memory',
-    summary: 'Memorize disappearing numbers of increasing length and type them back accurately.',
-    instructions: [
-      {
-        icon: '👁️',
-        title: 'Memorize the Number',
-        text: 'A number appears on screen. Memorize it before the progress bar runs out.'
-      },
-      {
-        icon: '⌨️',
-        title: 'Type & Submit',
-        text: 'Type the exact digits into the input box and press Enter or Submit.'
-      },
-      {
-        icon: '🔥',
-        title: 'Growing Digits',
-        text: 'Each round the number grows by 1 digit. One wrong digit ends your round!'
-      }
-    ],
-    scoringTip: 'Longer numbers remembered yield massive score multipliers.'
+    objective: 'Recall the full number & submit',
+    penalty: '1 wrong digit ends your round',
+    scoring: 'Digits increase with each level',
+    type: 'number'
   },
   'visual-memory': {
     id: 'visual-memory',
-    name: 'Visual Memory',
+    title: 'Visual Memory',
     icon: '👁️',
-    category: 'Spatial Recall',
-    summary: 'Memorize patterns of highlighted tiles and recall their positions on the grid.',
-    instructions: [
-      {
-        icon: '💡',
-        title: 'Memorize Pattern',
-        text: 'Multiple tiles light up simultaneously. You have 2.2 seconds to memorize them.'
-      },
-      {
-        icon: '🧩',
-        title: 'Select Tiles',
-        text: 'Click all the tiles you remember (order does not matter) and hit Submit.'
-      },
-      {
-        icon: '❤️',
-        title: '3 Strikes Allowed',
-        text: 'You have 3 strikes. Missing tiles or picking wrong tiles costs a strike.'
-      }
-    ],
-    scoringTip: 'Higher levels feature expanding grid sizes and award the most points.'
+    tagline: 'Remember the lit tile positions. Recreate the pattern.',
+    category: 'Spatial Logic',
+    objective: 'Select all highlighted tile positions',
+    penalty: '3 strikes allowed before round ends',
+    scoring: 'Grid expands with higher levels',
+    type: 'visual'
   }
 };
 
@@ -133,7 +63,7 @@ export default function GamePreviewScreen() {
   const { gameState } = useArena();
 
   const rawId = (gameState?.gameId || 'reaction-rush').toLowerCase().replace(/_/g, '-');
-  const gameInfo = GAME_INFO_MAP[rawId] || GAME_INFO_MAP['reaction-rush'];
+  const game = GAME_PREVIEWS[rawId] || GAME_PREVIEWS['reaction-rush'];
 
   const gameIndex = gameState?.gameIndex || 1;
   const totalGames = gameState?.totalGames || 5;
@@ -141,7 +71,7 @@ export default function GamePreviewScreen() {
 
   const [secondsLeft, setSecondsLeft] = useState(initialDuration);
 
-  // Synchronized countdown timer
+  // Synchronized countdown
   useEffect(() => {
     setSecondsLeft(initialDuration);
     const interval = setInterval(() => {
@@ -159,14 +89,94 @@ export default function GamePreviewScreen() {
 
   const progressPercent = Math.max(0, Math.min(100, (secondsLeft / initialDuration) * 100));
 
+  // Render mechanic visual mock
+  const renderVisualMock = () => {
+    switch (game.type) {
+      case 'reaction':
+        return (
+          <div className="mini-mechanic-box reaction-mechanic">
+            <div className="mini-state-card state-red">
+              <span className="state-indicator">🔴</span>
+              <span className="state-label">WAIT...</span>
+            </div>
+            <div className="mini-arrow">➔</div>
+            <div className="mini-state-card state-green">
+              <span className="state-indicator">🟢</span>
+              <span className="state-label">CLICK!</span>
+            </div>
+          </div>
+        );
+
+      case 'sequence':
+        return (
+          <div className="mini-mechanic-box sequence-mechanic">
+            <div className="mini-grid-3x3">
+              <div className="m-tile"></div>
+              <div className="m-tile m-seq-1">1</div>
+              <div className="m-tile"></div>
+              <div className="m-tile m-seq-2">2</div>
+              <div className="m-tile"></div>
+              <div className="m-tile m-seq-3">3</div>
+              <div className="m-tile"></div>
+              <div className="m-tile"></div>
+              <div className="m-tile"></div>
+            </div>
+          </div>
+        );
+
+      case 'aim':
+        return (
+          <div className="mini-mechanic-box aim-mechanic">
+            <div className="mini-target-field">
+              <div className="m-crosshair"></div>
+              <div className="m-target m-target-1">🎯</div>
+              <div className="m-target m-target-2">🎯</div>
+            </div>
+          </div>
+        );
+
+      case 'number':
+        return (
+          <div className="mini-mechanic-box number-mechanic">
+            <div className="mini-digit-display">
+              <span className="m-digit">7</span>
+              <span className="m-digit">4</span>
+              <span className="m-digit">9</span>
+              <span className="m-digit">2</span>
+              <span className="m-digit">6</span>
+            </div>
+          </div>
+        );
+
+      case 'visual':
+      default:
+        return (
+          <div className="mini-mechanic-box visual-mechanic">
+            <div className="mini-grid-3x3">
+              <div className="m-tile m-lit"></div>
+              <div className="m-tile"></div>
+              <div className="m-tile m-lit"></div>
+              <div className="m-tile"></div>
+              <div className="m-tile m-lit"></div>
+              <div className="m-tile"></div>
+              <div className="m-tile"></div>
+              <div className="m-tile m-lit"></div>
+              <div className="m-tile"></div>
+            </div>
+          </div>
+        );
+    }
+  };
+
   return (
     <div className="game-preview-container">
-      <div className="game-preview-card">
+      <div className="game-preview-card preview-arcade-theme">
         {/* Tournament Stage Indicator */}
         <div className="preview-top-tracker">
-          <span className="preview-stage-pill">
-            🏆 Tournament Game {gameIndex} of {totalGames}
-          </span>
+          <div className="preview-upnext-badge">
+            <span className="pulse-dot-orange"></span>
+            <span>UP NEXT • GAME {gameIndex} OF {totalGames}</span>
+          </div>
           <div className="preview-dots-row">
             {Array.from({ length: totalGames }).map((_, idx) => (
               <span
@@ -177,62 +187,67 @@ export default function GamePreviewScreen() {
           </div>
         </div>
 
-        {/* Hero Banner with Game Title & Category */}
-        <div className="preview-hero">
-          <div className="preview-hero-icon-bubble">
-            <span className="preview-large-icon">{gameInfo.icon}</span>
-          </div>
-          <div className="preview-hero-text">
-            <div className="preview-category-badge">{gameInfo.category}</div>
-            <h1 className="preview-game-title">{gameInfo.name}</h1>
-            <p className="preview-summary">{gameInfo.summary}</p>
+        {/* Hero Title & Tagline */}
+        <div className="preview-arcade-hero">
+          <div className="preview-icon-badge">{game.icon}</div>
+          <div className="preview-hero-info">
+            <div className="preview-category-chip">{game.category}</div>
+            <h1 className="preview-arcade-title">{game.title}</h1>
+            <p className="preview-tagline">{game.tagline}</p>
           </div>
         </div>
 
-        {/* How to Play Instructions Section */}
-        <div className="preview-guide-panel">
-          <h3 className="preview-guide-heading">
-            <span>📖</span> How to Play & Win
-          </h3>
-          <div className="preview-steps-grid">
-            {gameInfo.instructions.map((step, index) => (
-              <div key={index} className="preview-step-card">
-                <div className="step-card-header">
-                  <span className="step-badge-number">Step {index + 1}</span>
-                  <span className="step-badge-icon">{step.icon}</span>
-                </div>
-                <h4 className="step-card-title">{step.title}</h4>
-                <p className="step-card-text">{step.text}</p>
-              </div>
-            ))}
+        {/* Quick Visual Graphic */}
+        <div className="preview-visual-stage">
+          {renderVisualMock()}
+        </div>
+
+        {/* 3 Quick Game Rules Strip */}
+        <div className="preview-rules-strip">
+          <div className="rule-chip">
+            <span className="rule-chip-icon">🎯</span>
+            <div className="rule-chip-text">
+              <span className="rule-chip-label">OBJECTIVE</span>
+              <span className="rule-chip-val">{game.objective}</span>
+            </div>
+          </div>
+          <div className="rule-chip">
+            <span className="rule-chip-icon">⚠️</span>
+            <div className="rule-chip-text">
+              <span className="rule-chip-label">WATCH OUT</span>
+              <span className="rule-chip-val">{game.penalty}</span>
+            </div>
+          </div>
+          <div className="rule-chip">
+            <span className="rule-chip-icon">⚡</span>
+            <div className="rule-chip-text">
+              <span className="rule-chip-label">SCORING</span>
+              <span className="rule-chip-val">{game.scoring}</span>
+            </div>
           </div>
         </div>
 
-        {/* Scoring Pro-Tip Banner */}
-        <div className="preview-scoring-tip">
-          <span className="tip-star">💡</span>
-          <div className="tip-content">
-            <strong>Scoring:</strong> {gameInfo.scoringTip}
+        {/* Arcade Live Countdown */}
+        <div className="preview-arcade-countdown">
+          <div className="countdown-center-row">
+            <div className="countdown-number-ring">
+              <span className="countdown-num-text">
+                {secondsLeft > 0 ? secondsLeft : 'GO!'}
+              </span>
+            </div>
+            <div className="countdown-info-text">
+              <span className="countdown-title">GET READY!</span>
+              <span className="countdown-sub">
+                {secondsLeft > 0 ? `Game starts in ${secondsLeft}s` : 'Launching now...'}
+              </span>
+            </div>
           </div>
-        </div>
-
-        {/* Dynamic Countdown Section */}
-        <div className="preview-countdown-section">
-          <div className="preview-countdown-header">
-            <span className="countdown-label">Next Game Starting In:</span>
-            <span className="countdown-number">
-              {secondsLeft > 0 ? `${secondsLeft}s` : 'Starting now...'}
-            </span>
-          </div>
-          <div className="preview-progress-track">
+          <div className="countdown-progress-bar">
             <div
-              className="preview-progress-fill"
+              className="countdown-progress-fill"
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          <p className="preview-countdown-hint">
-            Get your hands ready on your screen or mouse!
-          </p>
         </div>
       </div>
     </div>
