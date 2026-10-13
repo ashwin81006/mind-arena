@@ -42,6 +42,7 @@ export function ArenaProvider({ children }) {
   const isReadyRef = useRef(false);
   const pendingActionRef = useRef(null);
   const messageHandlerRef = useRef(null);
+  const startingMatchRef = useRef(false);
 
   const send = useCallback((msg) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -445,7 +446,12 @@ export function ArenaProvider({ children }) {
   }, [send]);
 
   const startMatch = useCallback(() => {
+    if (startingMatchRef.current) return;
+    startingMatchRef.current = true;
     send(`${PROTOCOL.START_MATCH}|${selectedGames.join(',')}`);
+    setTimeout(() => {
+      startingMatchRef.current = false;
+    }, 2500);
   }, [send, selectedGames]);
 
   const leaveRoom = useCallback(() => {

@@ -400,26 +400,33 @@ public class ClientHandler implements Runnable {
                 return;
             }
 
-            java.util.List<String> gamesToPlay = room.getSelectedGames();
-            String[] parts = request.split("\\|", 2);
-            if (parts.length > 1 && !parts[1].trim().isEmpty()) {
-                String[] raw = parts[1].split(",");
-                java.util.List<String> customList = new java.util.ArrayList<>();
-                for (String g : raw) {
-                    String trimmed = g.trim();
-                    if (!trimmed.isEmpty()) {
-                        customList.add(trimmed);
+            synchronized (room) {
+                if (room.getMatchSession() != null) {
+                    System.out.println("[Match] Start match ignored - match already in progress in room " + room.getId());
+                    return;
+                }
+
+                java.util.List<String> gamesToPlay = room.getSelectedGames();
+                String[] parts = request.split("\\|", 2);
+                if (parts.length > 1 && !parts[1].trim().isEmpty()) {
+                    String[] raw = parts[1].split(",");
+                    java.util.List<String> customList = new java.util.ArrayList<>();
+                    for (String g : raw) {
+                        String trimmed = g.trim();
+                        if (!trimmed.isEmpty()) {
+                            customList.add(trimmed);
+                        }
+                    }
+                    if (!customList.isEmpty()) {
+                        gamesToPlay = customList;
+                        room.setSelectedGames(customList);
                     }
                 }
-                if (!customList.isEmpty()) {
-                    gamesToPlay = customList;
-                    room.setSelectedGames(customList);
-                }
-            }
 
-            MatchSession session = new MatchSession(room, gamesToPlay);
-            room.setMatchSession(session);
-            session.start();
+                MatchSession session = new MatchSession(room, gamesToPlay);
+                room.setMatchSession(session);
+                session.start();
+            }
 
         } else if (request.startsWith(Protocol.SUBMIT_SCORE + "|")) {
 

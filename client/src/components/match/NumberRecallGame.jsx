@@ -40,6 +40,9 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
   const [timeLeftMs, setTimeLeftMs] = useState(0);
   const [totalDisplayTimeMs, setTotalDisplayTimeMs] = useState(0);
+  const [inputTimeLeftMs, setInputTimeLeftMs] = useState(0);
+  const [inputTotalTimeMs, setInputTotalTimeMs] = useState(0);
+  const [isTimedOut, setIsTimedOut] = useState(false);
 
   const inputRef = useRef(null);
   const timerIdsRef = useRef([]);
@@ -49,6 +52,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
   const phaseRef = useRef('MEMORIZING');
   const scoreSubmittedRef = useRef(false);
   const prngRef = useRef(null);
+  const handleInputTimeoutRef = useRef(null);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
@@ -65,7 +69,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     return id;
   }, []);
 
-  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  // Seeded PRNG generator (Mulberry32)
   const createSeededPRNG = (seedString) => {
     let h = 2166136261 >>> 0;
     for (let i = 0; i < seedString.length; i++) {
@@ -93,6 +97,8 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     setLevel(lvl);
     levelRef.current = lvl;
     setPlayerInput('');
+    setInputTimeLeftMs(0);
+    setInputTotalTimeMs(0);
 
     // Level 1: 3 digits. Level 2: 4 digits, Level 3: 5 digits...
     const digitCount = lvl + 2;
@@ -120,7 +126,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
       }
     }, 50);
 
-    // Hide number and switch to input phase
+    // Hide number and switch to input phase with thinking timeout
     addTimer(() => {
       if (countdownIntervalRef.current) {
         clearInterval(countdownIntervalRef.current);
@@ -129,6 +135,28 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
       setPhase('INPUT');
       phaseRef.current = 'INPUT';
       setTimeLeftMs(0);
+
+      // Thinking timeout for input: e.g. 5s baseline + 1.2s per digit (min 9s)
+      const inputDuration = Math.max(9000, 5000 + digitCount * 1200);
+      setInputTotalTimeMs(inputDuration);
+      setInputTimeLeftMs(inputDuration);
+
+      const inputStartTime = performance.now();
+      countdownIntervalRef.current = setInterval(() => {
+        const elapsed = performance.now() - inputStartTime;
+        const remaining = Math.max(0, inputDuration - elapsed);
+        setInputTimeLeftMs(remaining);
+        if (remaining <= 0) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+          }
+          if (handleInputTimeoutRef.current) {
+            handleInputTimeoutRef.current();
+          }
+        }
+      }, 50);
+
       setTimeout(() => {
         if (inputRef.current) {
           inputRef.current.focus();
@@ -137,16 +165,86 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     }, duration);
   }, [addTimer, clearAllTimers]);
 
+  // Handle timeout when player takes too long in input phase
+  const handleInputTimeout = useCallback(() => {
+    if (phaseRef.current !== 'INPUT') return;
+    clearAllTimers();
+
+    // Check if player had already entered the correct string
+    const trimmedInput = (inputRef.current ? inputRef.current.value : playerInput).trim();
+    if (trimmedInput === targetNumberRef.current && trimmedInput.length > 0) {
+      const completedLevel = levelRef.current;
+      const digitsRecalled = targetNumberRef.current.length;
+      const newScore = calculateNumberRecallScore(completedLevel, digitsRecalled);
+      setScore(newScore);
+      setPhase('FEEDBACK_SUCCESS');
+      phaseRef.current = 'FEEDBACK_SUCCESS';
+
+      addTimer(() => {
+        startLevel(completedLevel + 1);
+      }, 1200);
+      return;
+    }
+
+    // Otherwise timeout => Game Over
+    setIsTimedOut(true);
+    setPhase('GAME_OVER');
+    phaseRef.current = 'GAME_OVER';
+    const finalCompletedLevels = Math.max(0, levelRef.current - 1);
+    const digitsRecalled = Math.max(0, finalCompletedLevels + 2);
+    const finalScore = calculateNumberRecallScore(finalCompletedLevels, digitsRecalled);
+    setScore(finalScore);
+
+    const result = {
+      game: 'NUMBER_RECALL',
+      score: finalScore,
+      highestLevel: finalCompletedLevels,
+      digitsRecalled,
+      timedOut: true
+    };
+
+    if (!scoreSubmittedRef.current) {
+      scoreSubmittedRef.current = true;
+      setScoreSubmitted(true);
+      if (submitScore) {
+        submitScore(finalScore);
+      }
+      if (onComplete) {
+        onComplete(result);
+      }
+    }
+  }, [clearAllTimers, playerInput, addTimer, startLevel, submitScore, onComplete]);
+
+  handleInputTimeoutRef.current = handleInputTimeout;
+
   const handleSkipMemorize = () => {
     if (phaseRef.current !== 'MEMORIZING') return;
-    if (countdownIntervalRef.current) {
-      clearInterval(countdownIntervalRef.current);
-      countdownIntervalRef.current = null;
-    }
     clearAllTimers();
     setPhase('INPUT');
     phaseRef.current = 'INPUT';
     setTimeLeftMs(0);
+
+    const digitCount = levelRef.current + 2;
+    const inputDuration = Math.max(9000, 5000 + digitCount * 1200);
+    setInputTotalTimeMs(inputDuration);
+    setInputTimeLeftMs(inputDuration);
+
+    const inputStartTime = performance.now();
+    countdownIntervalRef.current = setInterval(() => {
+      const elapsed = performance.now() - inputStartTime;
+      const remaining = Math.max(0, inputDuration - elapsed);
+      setInputTimeLeftMs(remaining);
+      if (remaining <= 0) {
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+        if (handleInputTimeoutRef.current) {
+          handleInputTimeoutRef.current();
+        }
+      }
+    }, 50);
+
     setTimeout(() => {
       if (inputRef.current) {
         inputRef.current.focus();
@@ -159,16 +257,15 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
     setScore(0);
     setScoreSubmitted(false);
     scoreSubmittedRef.current = false;
+    setIsTimedOut(false);
     phaseRef.current = 'MEMORIZING';
 
-    // Seeded PRNG for multiplayer competitive equality
-    const seed = (!isPractice && currentRoomId)
-      ? `${currentRoomId}_nr_round_${gameState?.currentRound || 1}`
-      : `nr_${Date.now()}_${Math.random()}`;
+    // Unique per-player and per-game random seed
+    const seed = `nr_${myPlayerId || 'p'}_${Date.now()}_${Math.random()}`;
 
     prngRef.current = createSeededPRNG(seed);
     startLevel(1);
-  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, startLevel]);
+  }, [clearAllTimers, myPlayerId, startLevel]);
 
   useEffect(() => {
     startGame();
@@ -177,6 +274,7 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
   const handleSubmit = (e) => {
     if (e) e.preventDefault();
     if (phaseRef.current !== 'INPUT') return;
+    clearAllTimers();
 
     const trimmedInput = playerInput.trim();
     const correctString = targetNumberRef.current;
@@ -310,8 +408,8 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
       <div className="match-results-card number-game-over-card">
         <div className="results-header">
           <span className="game-over-icon">🔢</span>
-          <h2 style={{ color: '#ef4444' }}>WRONG ANSWER</h2>
-          <p>Game Over — Number Recall</p>
+          <h2 style={{ color: '#ef4444' }}>{isTimedOut ? "TIME'S UP!" : "WRONG ANSWER"}</h2>
+          <p>{isTimedOut ? "Thinking time expired for this level" : "Game Over — Number Recall"}</p>
         </div>
 
         <div className="comparison-card">
@@ -420,6 +518,22 @@ export default function NumberRecallGame({ onComplete, isPractice = false, onBac
         {phase === 'INPUT' && (
           <div className="number-input-view">
             <p className="number-instruction">Enter the number you just saw:</p>
+            {inputTotalTimeMs > 0 && (
+              <div className="input-timer-bar-wrap" style={{ width: '100%', maxWidth: '320px', margin: '0 auto 1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: inputTimeLeftMs <= 3000 ? '#ef4444' : '#94a3b8', marginBottom: '0.25rem' }}>
+                  <span>⏱️ Time Remaining:</span>
+                  <span style={{ fontWeight: 700 }}>{(inputTimeLeftMs / 1000).toFixed(1)}s</span>
+                </div>
+                <div style={{ width: '100%', height: '6px', background: 'rgba(255,255,255,0.1)', borderRadius: '999px', overflow: 'hidden' }}>
+                  <div style={{
+                    width: `${inputTotalTimeMs > 0 ? (inputTimeLeftMs / inputTotalTimeMs) * 100 : 0}%`,
+                    height: '100%',
+                    background: inputTimeLeftMs <= 3000 ? '#ef4444' : '#38bdf8',
+                    transition: 'width 0.05s linear'
+                  }} />
+                </div>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="number-input-form">
               <input
                 ref={inputRef}

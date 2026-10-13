@@ -1,12 +1,25 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useArena } from '../../context/ArenaContext';
 
 export default function RoomControls() {
   const { isHost, isReady, players, toggleReady, startMatch } = useArena();
+  const [isStarting, setIsStarting] = useState(false);
 
   const hasEnoughPlayers = players.length >= 2;
   const allReady = hasEnoughPlayers && players.every((p) => p.ready);
-  const canStartMatch = isHost && allReady;
+  const canStartMatch = isHost && allReady && !isStarting;
+
+  useEffect(() => {
+    if (!allReady) {
+      setIsStarting(false);
+    }
+  }, [allReady]);
+
+  const handleStartMatch = () => {
+    if (!canStartMatch || isStarting) return;
+    setIsStarting(true);
+    startMatch();
+  };
 
   return (
     <div className="room-controls-group">
@@ -21,10 +34,10 @@ export default function RoomControls() {
         {isHost ? (
           <button
             className="btn btn-primary btn-lg"
-            disabled={!canStartMatch}
-            onClick={startMatch}
+            disabled={!canStartMatch || isStarting}
+            onClick={handleStartMatch}
           >
-            Start Match
+            {isStarting ? 'Launching Match...' : 'Start Match'}
           </button>
         ) : (
           <div className="waiting-host-text">

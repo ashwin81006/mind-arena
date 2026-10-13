@@ -75,6 +75,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
   const [finalScore, setFinalScore] = useState(0);
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
   const [missAnimation, setMissAnimation] = useState(null); // click coordinate for miss splash
+  const [isTimedOut, setIsTimedOut] = useState(false);
 
   const containerRef = useRef(null);
   const spawnTimeRef = useRef(0);
@@ -87,6 +88,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
   const phaseRef = useRef('PREPARE');
   const scoreSubmittedRef = useRef(false);
   const prngRef = useRef(null);
+  const handleTimeoutRef = useRef(null);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
@@ -99,7 +101,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
     return id;
   }, []);
 
-  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  // Seeded PRNG generator (Mulberry32)
   const createSeededPRNG = (seedString) => {
     let h = 2166136261 >>> 0;
     for (let i = 0; i < seedString.length; i++) {
@@ -125,7 +127,7 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
     };
   }, [clearAllTimers]);
 
-  // Compute next target coordinate avoiding margins (room-seeded for multiplayer parity)
+  // Compute next target coordinate avoiding margins
   const spawnNextTarget = useCallback(() => {
     const minPct = 12;
     const maxPct = 88;
@@ -136,6 +138,54 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
     setTargetPos({ x: nextX, y: nextY });
     spawnTimeRef.current = performance.now();
   }, []);
+
+  // Handle timeout when player takes too long on 20 targets (35s maximum cap)
+  const handleTimeout = useCallback(() => {
+    if (phaseRef.current !== 'ACTIVE') return;
+    phaseRef.current = 'GAME_OVER';
+    setPhase('GAME_OVER');
+    setIsTimedOut(true);
+    if (clockIntervalRef.current) {
+      clearInterval(clockIntervalRef.current);
+      clockIntervalRef.current = null;
+    }
+    const currentHits = hitsRef.current;
+    const currentMisses = missesRef.current;
+    const sum = reactionTimesRef.current.reduce((a, b) => a + b, 0);
+    const avg = reactionTimesRef.current.length > 0 ? Math.round(sum / reactionTimesRef.current.length) : 1000;
+    const totalTime = 35000;
+    setCompletionTime(totalTime);
+    setElapsedSeconds('35.0');
+    const totalClicks = currentHits + currentMisses;
+    const accuracy = currentHits > 0 ? Math.round((currentHits / Math.max(1, totalClicks)) * 100) / 100 : 0;
+
+    const calculatedScore = calculateAimTrainerScore(currentHits, currentMisses, totalTime, avg);
+    setFinalScore(calculatedScore);
+
+    const result = {
+      game: 'AIM_TRAINER',
+      score: calculatedScore,
+      accuracy,
+      totalHits: currentHits,
+      totalMisses: currentMisses,
+      averageReactionTime: avg,
+      totalTime,
+      timedOut: true
+    };
+
+    if (!scoreSubmittedRef.current) {
+      scoreSubmittedRef.current = true;
+      setScoreSubmitted(true);
+      if (submitScore) {
+        submitScore(calculatedScore);
+      }
+      if (onComplete) {
+        onComplete(result);
+      }
+    }
+  }, [submitScore, onComplete]);
+
+  handleTimeoutRef.current = handleTimeout;
 
   // Start the 20-target game session
   const startGame = useCallback(() => {
@@ -154,27 +204,33 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
     setFinalScore(0);
     setScoreSubmitted(false);
     scoreSubmittedRef.current = false;
+    setIsTimedOut(false);
     setMissAnimation(null);
     hitsRef.current = 0;
     missesRef.current = 0;
     reactionTimesRef.current = [];
 
-    // Seeded PRNG for multiplayer competitive equality
-    const seed = (!isPractice && currentRoomId)
-      ? `${currentRoomId}_aim_round_${gameState?.currentRound || 1}`
-      : `aim_${Date.now()}_${Math.random()}`;
+    // Unique per-player and per-game random seed
+    const seed = `aim_${myPlayerId || 'p'}_${Date.now()}_${Math.random()}`;
 
     prngRef.current = createSeededPRNG(seed);
     phaseRef.current = 'ACTIVE';
     setPhase('ACTIVE');
     const startNow = performance.now();
     gameStartTimeRef.current = startNow;
+    const MAX_AIM_TIME_MS = 35000;
     clockIntervalRef.current = setInterval(() => {
-      const elapsed = (performance.now() - gameStartTimeRef.current) / 1000;
+      const elapsedMs = performance.now() - gameStartTimeRef.current;
+      const elapsed = elapsedMs / 1000;
       setElapsedSeconds(elapsed.toFixed(1));
+      if (elapsedMs >= MAX_AIM_TIME_MS && phaseRef.current === 'ACTIVE') {
+        if (handleTimeoutRef.current) {
+          handleTimeoutRef.current();
+        }
+      }
     }, 100);
     spawnNextTarget();
-  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, spawnNextTarget]);
+  }, [clearAllTimers, myPlayerId, spawnNextTarget]);
 
   useEffect(() => {
     startGame();
@@ -355,8 +411,8 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
       <div className="match-results-card aim-game-over-card">
         <div className="results-header">
           <span className="game-over-icon">🎯</span>
-          <h2>Target Course Finished!</h2>
-          <p>All {TOTAL_TARGETS} targets completed.</p>
+          <h2>{isTimedOut ? "Time's Up! (35s Limit)" : "Target Course Finished!"}</h2>
+          <p>{isTimedOut ? `Completed ${hits} of ${TOTAL_TARGETS} targets before timeout.` : `All ${TOTAL_TARGETS} targets completed.`}</p>
         </div>
 
         <div className="stats-summary-grid">
@@ -445,7 +501,9 @@ export default function AimTrainerGame({ onComplete, isPractice = false, onBackT
             </div>
             <div className="hud-metric">
               <span className="hud-metric-label">Time:</span>
-              <span className="hud-metric-value text-good">{elapsedSeconds}s</span>
+              <span className={`hud-metric-value ${parseFloat(elapsedSeconds) >= 28 ? 'text-danger' : 'text-good'}`}>
+                {elapsedSeconds}s <span style={{ fontSize: '0.75rem', opacity: 0.7 }}>/ 35s</span>
+              </span>
             </div>
             <div className="hud-metric">
               <span className="hud-metric-label">Last Hit:</span>

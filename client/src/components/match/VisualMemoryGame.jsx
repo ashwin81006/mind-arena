@@ -38,7 +38,6 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
   const returnToLobby = arenaContext?.returnToLobby;
   const currentRoomId = arenaContext?.currentRoomId;
 
-  // Phase: 'SHOWING' | 'SELECTING' | 'VALIDATING' | 'GAME_OVER'
   const [phase, setPhase] = useState('SHOWING');
   const [level, setLevel] = useState(1);
   const [gridSize, setGridSize] = useState(3);
@@ -49,8 +48,12 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
   const [totalCorrectAccumulated, setTotalCorrectAccumulated] = useState(0);
   const [totalIncorrectAccumulated, setTotalIncorrectAccumulated] = useState(0);
+  const [selectionTimeLeftMs, setSelectionTimeLeftMs] = useState(0);
+  const [selectionTotalTimeMs, setSelectionTotalTimeMs] = useState(0);
+  const [isTimedOut, setIsTimedOut] = useState(false);
 
   const timerIdsRef = useRef([]);
+  const countdownIntervalRef = useRef(null);
   const targetTilesRef = useRef(new Set());
   const selectedTilesRef = useRef(new Set());
   const levelRef = useRef(1);
@@ -59,10 +62,15 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
   const totalIncorrectRef = useRef(0);
   const scoreSubmittedRef = useRef(false);
   const prngRef = useRef(null);
+  const handleSubmitRef = useRef(null);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
     timerIdsRef.current = [];
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
   }, []);
 
   const addTimer = useCallback((fn, delayMs) => {
@@ -77,7 +85,7 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     };
   }, [clearAllTimers]);
 
-  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  // Seeded PRNG generator (Mulberry32)
   const createSeededPRNG = (seedString) => {
     let h = 2166136261 >>> 0;
     for (let i = 0; i < seedString.length; i++) {
@@ -98,11 +106,13 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     clearAllTimers();
     setLevel(lvl);
     levelRef.current = lvl;
+    setSelectionTimeLeftMs(0);
+    setSelectionTotalTimeMs(0);
 
     const { gridSize: size, tileCount } = getVisualMemoryConfig(lvl);
     setGridSize(size);
 
-    // Pick deterministic random unique tile indices using room-seeded PRNG
+    // Pick unique tile indices using seeded PRNG
     const rand = prngRef.current || Math.random;
     const totalCells = size * size;
     const targetSet = new Set();
@@ -123,6 +133,28 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     addTimer(() => {
       setPhase('SELECTING');
       phaseRef.current = 'SELECTING';
+
+      // Selection thinking timeout: 8s base + 2.2s per target tile
+      const selectionDuration = Math.max(8000, tileCount * 2200);
+      setSelectionTotalTimeMs(selectionDuration);
+      setSelectionTimeLeftMs(selectionDuration);
+
+      const startTime = performance.now();
+      countdownIntervalRef.current = setInterval(() => {
+        const elapsed = performance.now() - startTime;
+        const remaining = Math.max(0, selectionDuration - elapsed);
+        setSelectionTimeLeftMs(remaining);
+        if (remaining <= 0) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+          }
+          if (handleSubmitRef.current) {
+            setIsTimedOut(true);
+            handleSubmitRef.current();
+          }
+        }
+      }, 50);
     }, memorizationTime);
   }, [addTimer, clearAllTimers]);
 
@@ -135,16 +167,15 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
     totalCorrectRef.current = 0;
     totalIncorrectRef.current = 0;
     scoreSubmittedRef.current = false;
+    setIsTimedOut(false);
     phaseRef.current = 'SHOWING';
 
-    // Seeded PRNG for multiplayer competitive equality
-    const seed = (!isPractice && currentRoomId)
-      ? `${currentRoomId}_vm_round_${gameState?.currentRound || 1}`
-      : `vm_${Date.now()}_${Math.random()}`;
+    // Unique per-player and per-game random seed
+    const seed = `vm_${myPlayerId || 'p'}_${Date.now()}_${Math.random()}`;
 
     prngRef.current = createSeededPRNG(seed);
     startLevel(1);
-  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, startLevel]);
+  }, [clearAllTimers, myPlayerId, startLevel]);
 
   useEffect(() => {
     startGame();
@@ -168,6 +199,7 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
 
   // Submit player's selection
   const handleSubmit = () => {
+    clearAllTimers();
     if (phaseRef.current !== 'SELECTING') return;
     phaseRef.current = 'VALIDATING';
     setPhase('VALIDATING');
@@ -244,6 +276,8 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
       }, 1500); // Give player 1.5s to see what was right/wrong on grid
     }
   };
+
+  handleSubmitRef.current = handleSubmit;
 
   // Match final / round results screens
   if (gameState && gameState.phase === 'MATCH_OVER') {
@@ -332,8 +366,8 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
       <div className="match-results-card visual-game-over-card">
         <div className="results-header">
           <span className="game-over-icon">👁️</span>
-          <h2 style={{ color: '#ef4444' }}>Round Finished</h2>
-          <p>Strikes exhausted for this round.</p>
+          <h2 style={{ color: '#ef4444' }}>{isTimedOut ? "TIME'S UP!" : "Round Finished"}</h2>
+          <p>{isTimedOut ? "Thinking time expired for this level." : "Strikes exhausted for this round."}</p>
         </div>
 
         <div className="stats-summary-grid">
@@ -406,8 +440,21 @@ export default function VisualMemoryGame({ onComplete, isPractice = false, onBac
             </div>
           )}
           {phase === 'SELECTING' && (
-            <div className="banner-selecting">
-              <span>Select the {targetTiles.size} tiles ({selectedTiles.size} / {targetTiles.size} selected)</span>
+            <div className="banner-selecting" style={{ width: '100%', maxWidth: '360px', margin: '0 auto' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+                <span>Select {targetTiles.size} tiles ({selectedTiles.size} / {targetTiles.size})</span>
+                <span style={{ fontSize: '0.85rem', fontWeight: 700, color: selectionTimeLeftMs <= 3000 ? '#ef4444' : '#38bdf8' }}>
+                  ⏱️ {(selectionTimeLeftMs / 1000).toFixed(1)}s
+                </span>
+              </div>
+              <div style={{ width: '100%', height: '5px', background: 'rgba(255,255,255,0.1)', borderRadius: '999px', overflow: 'hidden' }}>
+                <div style={{
+                  width: `${selectionTotalTimeMs > 0 ? (selectionTimeLeftMs / selectionTotalTimeMs) * 100 : 0}%`,
+                  height: '100%',
+                  background: selectionTimeLeftMs <= 3000 ? '#ef4444' : '#38bdf8',
+                  transition: 'width 0.05s linear'
+                }} />
+              </div>
             </div>
           )}
           {phase === 'VALIDATING' && (

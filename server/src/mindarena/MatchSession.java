@@ -29,11 +29,15 @@ public class MatchSession {
 
     public MatchSession(Room room, List<String> games) {
         this.room = room;
+        List<String> list;
         if (games == null || games.isEmpty()) {
-            this.gameSequence = Arrays.asList("reaction-rush", "sequence-memory", "aim-trainer", "number-recall", "visual-memory");
+            list = new ArrayList<>(Arrays.asList("reaction-rush", "sequence-memory", "aim-trainer", "number-recall", "visual-memory"));
         } else {
-            this.gameSequence = new ArrayList<>(games);
+            list = new ArrayList<>(games);
         }
+        // Randomize the mini-game sequence so every match has a fresh dynamic order
+        Collections.shuffle(list, random);
+        this.gameSequence = Collections.unmodifiableList(list);
 
         for (Player p : room.getPlayers()) {
             totalScores.put(p.getId(), 0);
@@ -137,8 +141,8 @@ public class MatchSession {
             roundActive = true;
             roundTriggerTime = System.currentTimeMillis();
 
-            // Set generous 120-second round timeout in case player disconnects
-            timeoutFuture = scheduler.schedule(this::endRound, 120, TimeUnit.SECONDS);
+            // 45-second round fallback timeout
+            timeoutFuture = scheduler.schedule(this::endRound, 45, TimeUnit.SECONDS);
         }
     }
 
@@ -216,6 +220,13 @@ public class MatchSession {
                 timeoutFuture.cancel(false);
             }
             scheduler.schedule(this::endRound, 400, TimeUnit.MILLISECONDS);
+        } else if (room.getPlayerCount() > 1 && roundScores.size() >= 1) {
+            // At least one player finished. Give remaining players a 15-second grace cutoff
+            // so finished players aren't kept waiting forever if someone is AFK or stalling
+            if (timeoutFuture != null && !timeoutFuture.isDone()) {
+                timeoutFuture.cancel(false);
+            }
+            timeoutFuture = scheduler.schedule(this::endRound, 15, TimeUnit.SECONDS);
         }
     }
 

@@ -36,7 +36,16 @@ export default function GamesSequencePreview() {
     }
   };
 
-  const activeGames = ARENA_GAMES.filter((g) => selectedGames.includes(g.id));
+  const handleShuffleOrder = () => {
+    if (!isHost || selectedGames.length <= 1) return;
+    const shuffled = [...selectedGames].sort(() => Math.random() - 0.5);
+    updateSelectedGames(shuffled);
+  };
+
+  // Preserve the actual order of selectedGames (shuffled or custom)
+  const activeGames = selectedGames
+    .map((id) => ARENA_GAMES.find((g) => g.id === id))
+    .filter(Boolean);
 
   return (
     <div className="room-games-selection-card">
@@ -72,6 +81,14 @@ export default function GamesSequencePreview() {
               onClick={() => handleSelectPreset('MEMORY')}
             >
               🧠 Memory
+            </button>
+            <button
+              type="button"
+              className="btn-preset btn-preset-shuffle"
+              onClick={handleShuffleOrder}
+              title="Randomize the game order for the upcoming match"
+            >
+              🎲 Shuffle Order
             </button>
           </div>
         )}

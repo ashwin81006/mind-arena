@@ -30,6 +30,9 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
   const [playerStep, setPlayerStep] = useState(0);    // Current index in player's reproduction
   const [score, setScore] = useState(0);
   const [scoreSubmitted, setScoreSubmitted] = useState(false);
+  const [inputTimeLeftMs, setInputTimeLeftMs] = useState(0);
+  const [inputTotalTimeMs, setInputTotalTimeMs] = useState(0);
+  const [isTimedOut, setIsTimedOut] = useState(false);
 
   // Refs for timers and memory state to prevent stale closures and memory leaks
   const sequenceRef = useRef([]);
@@ -37,12 +40,18 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
   const levelRef = useRef(1);
   const phaseRef = useRef('IDLE');
   const timerIdsRef = useRef([]);
+  const countdownIntervalRef = useRef(null);
+  const scoreSubmittedRef = useRef(false);
   const prngRef = useRef(null);
   const isInputLockedRef = useRef(false);
 
   const clearAllTimers = useCallback(() => {
     timerIdsRef.current.forEach((id) => clearTimeout(id));
     timerIdsRef.current = [];
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
   }, []);
 
   const addTimer = useCallback((fn, delayMs) => {
@@ -58,7 +67,7 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     };
   }, [clearAllTimers]);
 
-  // Seeded PRNG generator (Mulberry32) for multiplayer room parity
+  // Seeded PRNG generator (Mulberry32)
   const createSeededPRNG = (seedString) => {
     let h = 2166136261 >>> 0;
     for (let i = 0; i < seedString.length; i++) {
@@ -86,6 +95,44 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     return next;
   };
 
+  // Handle timeout when player takes too long to reproduce sequence
+  const handleInputTimeout = useCallback(() => {
+    if (phaseRef.current !== 'INPUT') return;
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+
+    setPhase('GAME_OVER');
+    phaseRef.current = 'GAME_OVER';
+    setIsTimedOut(true);
+
+    const currentSeq = sequenceRef.current;
+    const finalCompletedLevels = Math.max(0, levelRef.current - 1);
+    const finalSequenceLength = currentSeq.length;
+    const finalScore = calculateSequenceMemoryScore(finalCompletedLevels, finalSequenceLength);
+    setScore(finalScore);
+
+    const result = {
+      game: 'SEQUENCE_MEMORY',
+      score: finalScore,
+      highestLevel: finalCompletedLevels,
+      sequenceLength: finalSequenceLength,
+      timedOut: true
+    };
+
+    if (!scoreSubmittedRef.current) {
+      scoreSubmittedRef.current = true;
+      setScoreSubmitted(true);
+      if (submitScore) {
+        submitScore(finalScore);
+      }
+      if (onComplete) {
+        onComplete(result);
+      }
+    }
+  }, [submitScore, onComplete]);
+
   // Play the sequence by highlighting tiles one by one
   const playSequence = useCallback((seqToPlay) => {
     clearAllTimers();
@@ -93,6 +140,8 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     phaseRef.current = 'SHOWING';
     setActiveTile(null);
     setWrongTile(null);
+    setInputTimeLeftMs(0);
+    setInputTotalTimeMs(0);
 
     const stepDuration = 380; // ms tile stays lit
     const gapDuration = 140;  // ms between tiles
@@ -110,7 +159,7 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
       }, i * totalStepTime + 150 + stepDuration);
     });
 
-    // When sequence finishes showing, allow player input
+    // When sequence finishes showing, allow player input with strict thinking timeout
     const finishTime = seqToPlay.length * totalStepTime + 200;
     addTimer(() => {
       setActiveTile(null);
@@ -119,11 +168,35 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
       setPlayerStep(0);
       playerStepRef.current = 0;
       isInputLockedRef.current = false;
+
+      // Thinking timeout: e.g. 3s per tile with a 9s baseline
+      const turnDuration = Math.max(9000, seqToPlay.length * 2800);
+      setInputTotalTimeMs(turnDuration);
+      setInputTimeLeftMs(turnDuration);
+
+      const startTime = performance.now();
+      countdownIntervalRef.current = setInterval(() => {
+        const elapsed = performance.now() - startTime;
+        const rem = Math.max(0, turnDuration - elapsed);
+        setInputTimeLeftMs(rem);
+        if (rem <= 0) {
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+            countdownIntervalRef.current = null;
+          }
+          handleInputTimeout();
+        }
+      }, 50);
     }, finishTime);
-  }, [addTimer, clearAllTimers]);
+  }, [addTimer, clearAllTimers, handleInputTimeout]);
 
   // Advance to next level: keep existing sequence and append exactly ONE new tile
   const advanceToNextLevel = useCallback(() => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+
     const nextLvl = levelRef.current + 1;
     setLevel(nextLvl);
     levelRef.current = nextLvl;
@@ -145,14 +218,14 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     clearAllTimers();
     setScore(0);
     setScoreSubmitted(false);
+    scoreSubmittedRef.current = false;
+    setIsTimedOut(false);
     setWrongTile(null);
     setActiveTile(null);
     isInputLockedRef.current = false;
 
-    // Seeded generator: all players in the room receive the exact same sequence for fair esports competition
-    const seed = (!isPractice && currentRoomId)
-      ? `${currentRoomId}_round_${gameState?.currentRound || 1}`
-      : `seq_${Date.now()}_${Math.random()}`;
+    // Distinct unique randomization per player & match so different players get different sequences
+    const seed = `seq_${myPlayerId || 'p'}_${Date.now()}_${Math.random()}`;
 
     const prng = createSeededPRNG(seed);
     prngRef.current = prng;
@@ -171,7 +244,7 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     playerStepRef.current = 0;
 
     playSequence(initialSeq);
-  }, [clearAllTimers, isPractice, currentRoomId, gameState?.currentRound, playSequence]);
+  }, [clearAllTimers, myPlayerId, playSequence]);
 
   // Auto-start when mounted
   useEffect(() => {
@@ -205,6 +278,11 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
 
       // Completed full sequence for this level!
       if (nextStep >= currentSeq.length) {
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+
         const completedLevel = levelRef.current;
         const newScore = calculateSequenceMemoryScore(completedLevel, currentSeq.length);
         setScore(newScore);
@@ -218,6 +296,11 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
       }
     } else {
       // INCORRECT TILE -> GAME OVER
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+
       setWrongTile(tileIndex);
       setPhase('GAME_OVER');
       phaseRef.current = 'GAME_OVER';
@@ -231,10 +314,12 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
         game: 'SEQUENCE_MEMORY',
         score: finalScore,
         highestLevel: finalCompletedLevels,
-        sequenceLength: finalSequenceLength
+        sequenceLength: finalSequenceLength,
+        timedOut: false
       };
 
-      if (!scoreSubmitted) {
+      if (!scoreSubmittedRef.current) {
+        scoreSubmittedRef.current = true;
         setScoreSubmitted(true);
         if (submitScore) {
           submitScore(finalScore);
@@ -333,9 +418,9 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
     return (
       <div className="match-results-card sequence-game-over-card">
         <div className="results-header">
-          <span className="game-over-icon">🧠</span>
-          <h2 style={{ color: '#ef4444' }}>Round Finished</h2>
-          <p>You made an incorrect move in the sequence.</p>
+          <span className="game-over-icon">{isTimedOut ? '⏳' : '🧠'}</span>
+          <h2 style={{ color: '#ef4444' }}>{isTimedOut ? "Time's Up!" : 'Round Finished'}</h2>
+          <p>{isTimedOut ? 'You ran out of time to reproduce the sequence.' : 'You made an incorrect move in the sequence.'}</p>
         </div>
 
         <div className="stats-summary-grid">
@@ -405,6 +490,11 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
         <span className="round-badge">
           Level {level} • {sequence.length} Tiles
         </span>
+        {phase === 'INPUT' && inputTotalTimeMs > 0 && (
+          <span className={`round-badge ${inputTimeLeftMs <= 3000 ? 'text-danger' : ''}`} style={{ fontWeight: 'bold' }}>
+            ⏱️ {(inputTimeLeftMs / 1000).toFixed(1)}s
+          </span>
+        )}
         <span className="score-chip">Score: {score}</span>
       </div>
 
@@ -415,6 +505,19 @@ export default function SequenceMemoryGame({ onComplete, isPractice = false, onB
           {phase === 'LEVEL_SUCCESS' && <span className="celebration-star">✨</span>}
           <span>{promptText}</span>
         </div>
+
+        {phase === 'INPUT' && inputTotalTimeMs > 0 && (
+          <div className="number-progress-container" style={{ width: '100%', maxWidth: '380px', margin: '0 auto 0.75rem auto' }}>
+            <div
+              className="number-progress-bar"
+              style={{
+                width: `${(inputTimeLeftMs / inputTotalTimeMs) * 100}%`,
+                backgroundColor: inputTimeLeftMs <= 3000 ? '#ef4444' : '#6366f1',
+                transition: 'width 0.05s linear'
+              }}
+            />
+          </div>
+        )}
 
         {/* 3x3 Interactive Memory Grid */}
         <div className="sequence-grid-3x3" role="grid" aria-label="3 by 3 sequence grid">
